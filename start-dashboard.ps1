@@ -32,6 +32,7 @@ Write-Host ""
 
 # Start the Node.js server in background
 $serverProcess = Start-Process -FilePath "node" -ArgumentList "$scriptDir\app\copilot-cost-dashboard-server.js" `
+    -WorkingDirectory $scriptDir -Environment @{ NO_AUTO_OPEN_BROWSER = "1" } `
   -WindowStyle Hidden -PassThru
 
 if ($serverProcess) {

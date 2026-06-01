@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs/promises");
 const path = require("path");
 const os = require("os");
+const { spawn } = require("child_process");
 const { URL } = require("url");
 
 const HOST = "127.0.0.1";
@@ -437,6 +438,37 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function openBrowser(url) {
+  try {
+    if (process.platform === "win32") {
+      const child = spawn("cmd", ["/c", "start", "", url], {
+        detached: true,
+        stdio: "ignore"
+      });
+      child.unref();
+      return true;
+    }
+
+    if (process.platform === "darwin") {
+      const child = spawn("open", [url], {
+        detached: true,
+        stdio: "ignore"
+      });
+      child.unref();
+      return true;
+    }
+
+    const child = spawn("xdg-open", [url], {
+      detached: true,
+      stdio: "ignore"
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function serveDashboard(res) {
   const html = await safeReadText(DASHBOARD_FILE);
   if (!html) {
@@ -503,6 +535,15 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Copilot Cost Dashboard server running on http://${HOST}:${PORT}`);
+  const dashboardUrl = `http://${HOST}:${PORT}`;
+  console.log(`Copilot Cost Dashboard server running on ${dashboardUrl}`);
   console.log(`Default root: ${getDefaultRoot()}`);
+
+  const shouldAutoOpen = process.env.NO_AUTO_OPEN_BROWSER !== "1";
+  if (shouldAutoOpen) {
+    const opened = openBrowser(dashboardUrl);
+    if (!opened) {
+      console.log(`Open browser manually: ${dashboardUrl}`);
+    }
+  }
 });

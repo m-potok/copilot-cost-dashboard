@@ -27,8 +27,8 @@ echo [INFO] Avvio server Dashboard in corso...
 echo [INFO] Percorso: %SCRIPT_DIR%
 echo.
 
-REM Start the Node.js server in a new window
-start "Copilot Cost Dashboard Server" node "%SCRIPT_DIR%app\copilot-cost-dashboard-server.js"
+REM Start the Node.js server in a new window (disable server-side auto-open)
+start "Copilot Cost Dashboard Server" cmd /c "set NO_AUTO_OPEN_BROWSER=1 && node \"%SCRIPT_DIR%app\copilot-cost-dashboard-server.js\""
 
 REM Wait a moment for the server to start
 timeout /t 2 /nobreak
