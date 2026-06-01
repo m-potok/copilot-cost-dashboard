@@ -813,6 +813,7 @@
       const totals = {
         sessions: sessions.length,
         modelTurns: 0,
+        autoDiscountTurns: 0,
         toolCalls: 0,
         inputTokens: 0,
         inputNonCachedTokens: 0,
@@ -821,12 +822,14 @@
         totalTokens: 0,
         errors: 0,
         aic: 0,
+        autoDiscountAmount: 0,
         euro: 0,
         missingPriceTurns: 0
       };
 
       for (const s of sessions) {
         totals.modelTurns += s.modelTurns;
+        totals.autoDiscountTurns += (s.autoDiscountTurns || 0);
         totals.toolCalls += s.toolCalls;
         totals.inputTokens += s.inputTokens;
         totals.inputNonCachedTokens += Math.max(0, (s.inputTokens || 0) - (s.cachedTokens || 0));
@@ -835,6 +838,7 @@
         totals.totalTokens += s.totalTokens;
         totals.errors += s.errors;
         totals.aic += s.aic;
+        totals.autoDiscountAmount += (s.autoDiscountAmount || 0);
         totals.missingPriceTurns += s.missingPriceTurns;
       }
       totals.euro = totals.aic * aicValueEuro;
@@ -931,6 +935,7 @@
               <div class="value">${fmtEuro(totals.euro)}</div>
               <ul class="mini-list">
                 <li><span>Copilot Usage (AIC)</span><strong>${fmtNum(totals.aic, 4)}</strong></li>
+                <li><span>Sconto Auto AIC</span><strong>${fmtNum(totals.autoDiscountAmount, 4)} (${fmtInt(totals.autoDiscountTurns)} turn)</strong></li>
                 <li><span>Formula</span><strong>AIC x valore</strong></li>
               </ul>
             </article>
@@ -999,6 +1004,8 @@
       const title = (session.title && String(session.title).trim()) ? String(session.title).trim() : "Titolo non disponibile";
       const euro = session.aic * aicValueEuro;
       const inputNonCachedTokens = Math.max(0, (session.inputTokens || 0) - (session.cachedTokens || 0));
+      const autoTurns = session.autoDiscountTurns || 0;
+      const autoDiscountAmount = session.autoDiscountAmount || 0;
 
       detailTitleEl.textContent = title;
       detailSubtitleEl.textContent = `${session.sessionId} · ${fmtDate(session.startTs)}`;
@@ -1022,6 +1029,8 @@
             <div class="kv"><div class="k">Output Tokens</div><div class="v">${fmtInt(session.outputTokens)}</div></div>
             <div class="kv"><div class="k">Total Tokens</div><div class="v">${fmtInt(session.totalTokens)}</div></div>
             <div class="kv"><div class="k">AIC</div><div class="v">${fmtNum(session.aic, 4)}</div></div>
+            <div class="kv"><div class="k">Auto Turns</div><div class="v">${fmtInt(autoTurns)}</div></div>
+            <div class="kv"><div class="k">Sconto Auto AIC</div><div class="v">${fmtNum(autoDiscountAmount, 4)}</div></div>
             <div class="kv"><div class="k">Costo (€)</div><div class="v">${fmtEuro(euro)}</div></div>
           </div>
         </section>
