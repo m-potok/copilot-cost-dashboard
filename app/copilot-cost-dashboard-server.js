@@ -8,6 +8,7 @@ const xlsx = require("xlsx");
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
+const AUTO_AIC_DISCOUNT_FACTOR = 0.9;
 const BASE_DIR = __dirname;
 const DASHBOARD_FILE = path.join(BASE_DIR, "copilot-cost-dashboard.html");
 const rootCaches = new Map();
@@ -110,6 +111,18 @@ function getPriceForModel(priceMap, modelId) {
   return null;
 }
 
+function isAutoModelRequest(row) {
+  const attrs = (row && row.attrs) || {};
+  const model = String(attrs.model || "").trim().toLowerCase();
+  const name = String((row && row.name) || "").trim().toLowerCase();
+  const selectionMode = String(attrs.modelSelection || attrs.routingMode || attrs.route || "").trim().toLowerCase();
+
+  if (model === "auto" || model === "gpt-auto" || model.startsWith("auto/")) return true;
+  if (name === "chat:auto" || name.startsWith("chat:auto:")) return true;
+  if (selectionMode.includes("auto")) return true;
+  return false;
+}
+
 function findTitleLogFile(rows) {
   for (const row of rows) {
     if (!row || row.type !== "child_session_ref") continue;
@@ -169,6 +182,8 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
   let errors = 0;
   let aic = 0;
   let missingPriceTurns = 0;
+  let autoDiscountTurns = 0;
+  let autoDiscountAmount = 0;
   const modelAgg = new Map();
 
   for (const row of rows) {
@@ -197,7 +212,14 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
       const prices = getPriceForModel(priceMap, modelId);
       let turnAic = 0;
       if (prices) {
-        turnAic = ((uncached * prices.input_price) + (cached * prices.cache_price) + (output * prices.output_price)) / 1000000;
+        const rawAic = ((uncached * prices.input_price) + (cached * prices.cache_price) + (output * prices.output_price)) / 1000000;
+        if (isAutoModelRequest(row)) {
+          autoDiscountTurns += 1;
+          autoDiscountAmount += rawAic * (1 - AUTO_AIC_DISCOUNT_FACTOR);
+          turnAic = rawAic * AUTO_AIC_DISCOUNT_FACTOR;
+        } else {
+          turnAic = rawAic;
+        }
       } else {
         missingPriceTurns += 1;
       }
@@ -224,6 +246,8 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
     errors,
     aic,
     missingPriceTurns,
+    autoDiscountTurns,
+    autoDiscountAmount,
     modelAgg: [...modelAgg.values()].sort((a, b) => b.aic - a.aic)
   };
 }
@@ -591,8 +615,9 @@ const server = http.createServer(async (req, res) => {
           const rows = sessions.map((s) => ({
             Titolo: s.title || "(non disponibile)",
             "ID Sessione": s.sessionId,
-            "Data Inizio": new Date((s.startTs || 0) * 1000).toLocaleString("it-IT"),
+            "Data Inizio": new Date(s.startTs || 0).toLocaleString("it-IT"),
             "Model Turns": s.modelTurns || 0,
+            "Auto Turns": s.autoDiscountTurns || 0,
             "Tool Calls": s.toolCalls || 0,
             "Input Tokens": s.inputTokens || 0,
             Cached: s.cachedTokens || 0,
@@ -600,10 +625,11 @@ const server = http.createServer(async (req, res) => {
             Total: s.totalTokens || 0,
             Errors: s.errors || 0,
             AIC: Number((s.aic || 0).toFixed(4)),
+            "Sconto Auto AIC": Number((s.autoDiscountAmount || 0).toFixed(4)),
             EUR: Number((s.aic * aicValueEuro).toFixed(4))
           }));
           const ws = xlsx.utils.json_to_sheet(rows);
-          ws["!cols"] = [ { wch: 25 }, { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 } ];
+          ws["!cols"] = [ { wch: 25 }, { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 12 } ];
           const wb = xlsx.utils.book_new();
           xlsx.utils.book_append_sheet(wb, ws, "Sessioni");
           const excelBuffer = xlsx.write(wb, { bookType: "xlsx", type: "buffer" });
