@@ -1,0 +1,1216 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Copilot Debug Logs Cost Tracker</title>
+  <style>
+    :root {
+      --bg: #f3f6f8;
+      --panel: #ffffff;
+      --ink: #0f1f2f;
+      --muted: #556577;
+      --line: #d9e1e8;
+      --accent: #005b99;
+      --accent-2: #007a66;
+      --danger: #ad1f2d;
+      --shadow: 0 14px 38px rgba(15, 31, 47, 0.1);
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0%, rgba(0, 91, 153, 0.1), transparent 30%),
+        radial-gradient(circle at 90% 0%, rgba(0, 122, 102, 0.12), transparent 34%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 22px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .header,
+    .panel,
+    .card,
+    .table-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .header { padding: 18px; display: grid; gap: 12px; }
+
+    .headline {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    h1 { margin: 0; font-size: clamp(1.3rem, 2.5vw, 2rem); letter-spacing: -0.02em; }
+
+    .subtitle { color: var(--muted); margin: 4px 0 0; font-size: 0.94rem; }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      min-height: 34px;
+      padding: 0 12px;
+      font: inherit;
+      background: #ffffff;
+      color: var(--ink);
+    }
+
+    .chip.active { border-color: var(--accent); color: #ffffff; background: var(--accent); }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    details.config-panel {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdff;
+    }
+
+    details.config-panel > summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--accent);
+      list-style: none;
+      user-select: none;
+    }
+
+    details.config-panel > summary::-webkit-details-marker { display: none; }
+
+    details.config-panel > summary::before {
+      content: "+ ";
+      font-weight: 800;
+    }
+
+    details.config-panel[open] > summary::before { content: "- "; }
+
+    .config-body {
+      margin-top: 10px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 36px;
+      padding: 0 12px;
+      font: inherit;
+      cursor: pointer;
+      background: #ffffff;
+      color: var(--ink);
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+      background: #eef6fd;
+    }
+
+    .btn.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .btn.primary:hover { background: #004c82; }
+
+    .inputs {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+
+    .field { display: grid; gap: 4px; min-width: 170px; }
+
+    .field label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .field input,
+    .field select {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 36px;
+      padding: 0 10px;
+      font: inherit;
+      color: var(--ink);
+      background: #ffffff;
+    }
+
+    .field input:focus,
+    .field select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0, 91, 153, 0.15);
+    }
+
+    .stats {
+      display: grid;
+      gap: 12px;
+    }
+
+    .stats-block {
+      display: grid;
+      gap: 8px;
+    }
+
+    .stats-block-title {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      padding-left: 2px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px;
+    }
+
+    .card { padding: 12px; display: grid; gap: 4px; }
+
+    .card .label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .card .value {
+      font-size: 1.45rem;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+
+    .card .hint { color: var(--muted); font-size: 0.8rem; }
+
+    .card-rich {
+      gap: 8px;
+    }
+
+    .mini-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 4px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .mini-list li {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .mini-list strong {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 12px;
+    }
+
+    .panel { padding: 14px; display: grid; gap: 10px; }
+
+    .panel h2 { margin: 0; font-size: 1rem; letter-spacing: -0.01em; }
+
+    .bar-list { display: grid; gap: 8px; }
+
+    .bar-row { display: grid; gap: 4px; }
+
+    .bar-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .bar-track {
+      width: 100%;
+      height: 9px;
+      border-radius: 999px;
+      background: #e7eef4;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+
+    .table-wrap { overflow: auto; }
+
+    table { width: 100%; border-collapse: collapse; min-width: 940px; }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f8fbfe;
+      z-index: 1;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 0.74rem;
+    }
+
+    td.num, th.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status { color: var(--muted); font-size: 0.9rem; }
+
+    .status.warn { color: var(--danger); font-weight: 700; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      border-radius: 999px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(15, 31, 47, 0.42);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .loading-box {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      min-width: min(560px, 96vw);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      border: 3px solid #dbe8f2;
+      border-top-color: var(--accent);
+      animation: spin 0.9s linear infinite;
+      flex: 0 0 auto;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .session-main {
+      display: grid;
+      gap: 2px;
+    }
+
+    .session-title {
+      font-weight: 700;
+      color: var(--ink);
+      max-width: 420px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-id {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .btn.small {
+      min-height: 30px;
+      padding: 0 8px;
+      font-size: 0.82rem;
+    }
+
+    .detail-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      background: rgba(15, 31, 47, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+    }
+
+    .detail-card {
+      width: min(980px, 96vw);
+      max-height: 88vh;
+      overflow: auto;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .detail-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .detail-head h3 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+
+    .kv-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 8px;
+    }
+
+    .detail-kpis {
+      display: grid;
+      gap: 12px;
+    }
+
+    .detail-group {
+      display: grid;
+      gap: 8px;
+    }
+
+    .detail-group-title {
+      font-size: 0.74rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      padding-left: 2px;
+    }
+
+    .kv {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fbfdff;
+    }
+
+    .kv .k {
+      font-size: 0.74rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+    }
+
+    .kv .v {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+    }
+
+    .detail-table th,
+    .detail-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      font-size: 0.86rem;
+    }
+
+    .detail-table th.num,
+    .detail-table td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mono { font-family: "Consolas", "Cascadia Code", monospace; font-size: 0.82rem; }
+
+    @media (max-width: 980px) {
+      .grid2 { grid-template-columns: 1fr; }
+      .field.path { min-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="header">
+      <div class="headline">
+        <div>
+          <h1>Copilot Session Cost Tracker</h1>
+          <p class="subtitle">Default automatico su %AppData%\Roaming\Code\User\workspaceStorage. Percorso modificabile in ogni momento.</p>
+        </div>
+        <span class="badge" id="loadedCount">0 sessioni caricate</span>
+      </div>
+
+      <details id="configPanel" class="config-panel">
+        <summary>Configurazioni</summary>
+        <div class="config-body">
+          <div class="toolbar">
+            <button id="loadDefault" class="btn primary" type="button">Carica cartella standard</button>
+            <button id="applyPath" class="btn" type="button">Usa percorso inserito</button>
+            <button id="reloadPath" class="btn" type="button">Ricarica percorso corrente</button>
+            <button id="refreshNow" class="btn" type="button">Aggiorna ora</button>
+          </div>
+
+          <div class="inputs">
+            <div class="field path" style="min-width:460px; flex:1 1 460px;">
+              <label for="rootPath">Root logs (modificabile)</label>
+              <input id="rootPath" type="text" placeholder="C:\\Users\\...\\AppData\\Roaming\\Code\\User\\workspaceStorage" />
+            </div>
+            <div class="field">
+              <label for="aicValue">Valore 1 AIC (€)</label>
+              <input id="aicValue" type="number" step="0.0001" min="0" value="0.01" />
+            </div>
+            <div class="field">
+              <label for="autoRefreshEnabled">Auto refresh</label>
+              <select id="autoRefreshEnabled">
+                <option value="on" selected>Attivo</option>
+                <option value="off">Disattivo</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="refreshInterval">Intervallo refresh</label>
+              <select id="refreshInterval">
+                <option value="15">15s</option>
+                <option value="30" selected>30s</option>
+                <option value="60">60s</option>
+                <option value="120">120s</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details id="filtersPanel" class="config-panel" open>
+        <summary>Filtri</summary>
+        <div class="config-body">
+          <div class="toolbar">
+            <button id="presetDay" class="chip active" type="button">Giorno corrente</button>
+            <button id="presetMonth" class="chip" type="button">Mese corrente</button>
+            <button id="preset7" class="chip" type="button">Ultimi 7 giorni</button>
+            <button id="preset30" class="chip" type="button">Ultimi 30 giorni</button>
+          </div>
+
+          <div class="inputs">
+            <div class="field">
+              <label for="fromDate">Da</label>
+              <input id="fromDate" type="date" />
+            </div>
+            <div class="field">
+              <label for="toDate">A</label>
+              <input id="toDate" type="date" />
+            </div>
+            <div class="field">
+              <label for="groupBy">Aggregazione</label>
+              <select id="groupBy">
+                <option value="day">Giorno</option>
+                <option value="month">Mese</option>
+              </select>
+            </div>
+            <button id="applyFilters" class="btn" type="button">Applica filtri</button>
+          </div>
+        </div>
+      </details>
+
+      <div id="status" class="status">Avvio in corso...</div>
+    </section>
+
+    <section class="stats" id="stats"></section>
+
+    <section class="grid2">
+      <article class="panel">
+        <h2>Trend aggregato</h2>
+        <div id="trend" class="bar-list"></div>
+      </article>
+      <article class="panel">
+        <h2>Modelli più costosi nel range</h2>
+        <div id="models" class="bar-list"></div>
+      </article>
+    </section>
+
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Sessione</th>
+            <th>Inizio</th>
+            <th class="num">Model Turns</th>
+            <th class="num">Tool Calls</th>
+            <th class="num">Input</th>
+            <th class="num">Cached Input</th>
+            <th class="num">Output</th>
+            <th class="num">Totale Token</th>
+            <th class="num">Errors</th>
+            <th class="num">AIC</th>
+            <th class="num">Costo (€)</th>
+            <th>Dettaglio</th>
+          </tr>
+        </thead>
+        <tbody id="sessionsBody"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <div id="loadingOverlay" class="loading-overlay hidden" aria-live="polite">
+    <div class="loading-box">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="loading-text" id="loadingText">Caricamento sessioni in corso...</div>
+    </div>
+  </div>
+
+  <div id="detailModal" class="detail-modal hidden" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <div class="detail-card">
+      <div class="detail-head">
+        <div>
+          <h3 id="detailTitle">Dettaglio sessione</h3>
+          <div id="detailSubtitle" class="subtitle"></div>
+        </div>
+        <button id="closeDetail" class="btn" type="button">Chiudi</button>
+      </div>
+      <div id="detailKpis" class="detail-kpis"></div>
+      <div class="table-wrap">
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th>Modello</th>
+              <th class="num">Turns</th>
+              <th class="num">AIC</th>
+              <th class="num">Costo (€)</th>
+            </tr>
+          </thead>
+          <tbody id="detailModelsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      sessions: [],
+      selectedRootPath: "",
+      activePreset: "day"
+    };
+
+    const statsEl = document.getElementById("stats");
+    const trendEl = document.getElementById("trend");
+    const modelsEl = document.getElementById("models");
+    const sessionsBodyEl = document.getElementById("sessionsBody");
+    const loadedCountEl = document.getElementById("loadedCount");
+    const statusEl = document.getElementById("status");
+    const configPanelEl = document.getElementById("configPanel");
+    const loadingOverlayEl = document.getElementById("loadingOverlay");
+    const loadingTextEl = document.getElementById("loadingText");
+    const detailModalEl = document.getElementById("detailModal");
+    const detailTitleEl = document.getElementById("detailTitle");
+    const detailSubtitleEl = document.getElementById("detailSubtitle");
+    const detailKpisEl = document.getElementById("detailKpis");
+    const detailModelsBodyEl = document.getElementById("detailModelsBody");
+
+    const rootPathEl = document.getElementById("rootPath");
+    const fromDateEl = document.getElementById("fromDate");
+    const toDateEl = document.getElementById("toDate");
+    const aicValueEl = document.getElementById("aicValue");
+    const autoRefreshEnabledEl = document.getElementById("autoRefreshEnabled");
+    const refreshIntervalEl = document.getElementById("refreshInterval");
+    const groupByEl = document.getElementById("groupBy");
+    const refreshNowBtn = document.getElementById("refreshNow");
+
+    let autoRefreshTimer = null;
+    let refreshInFlight = false;
+
+    const presetButtons = {
+      day: document.getElementById("presetDay"),
+      month: document.getElementById("presetMonth"),
+      last7: document.getElementById("preset7"),
+      last30: document.getElementById("preset30")
+    };
+
+    function setStatus(text, isWarn = false) {
+      statusEl.textContent = text;
+      statusEl.className = isWarn ? "status warn" : "status";
+    }
+
+    function setLoading(loading, message = "") {
+      loadingOverlayEl.classList.toggle("hidden", !loading);
+      if (loading && message) loadingTextEl.textContent = message;
+    }
+
+    function fmtInt(value) {
+      return new Intl.NumberFormat("it-IT").format(Math.round(value || 0));
+    }
+
+    function fmtNum(value, digits = 2) {
+      return new Intl.NumberFormat("it-IT", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+      }).format(value || 0);
+    }
+
+    function fmtEuro(value) {
+      return fmtNum(value, 2);
+    }
+
+    function fmtDate(ts) {
+      if (!Number.isFinite(ts)) return "-";
+      return new Date(ts).toLocaleString("it-IT");
+    }
+
+    function dateFloorLocal(ts) {
+      const d = new Date(ts);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+
+    function monthFloorLocal(ts) {
+      const d = new Date(ts);
+      d.setDate(1);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+
+    function setPreset(preset) {
+      state.activePreset = preset;
+      for (const [key, btn] of Object.entries(presetButtons)) {
+        btn.classList.toggle("active", key === preset);
+      }
+
+      const now = new Date();
+      let from;
+      let to;
+
+      if (preset === "day") {
+        from = dateFloorLocal(now.getTime());
+        to = new Date(from);
+        to.setDate(to.getDate() + 1);
+        to.setMilliseconds(-1);
+      } else if (preset === "month") {
+        from = monthFloorLocal(now.getTime());
+        to = new Date(from);
+        to.setMonth(to.getMonth() + 1);
+        to.setMilliseconds(-1);
+      } else if (preset === "last7") {
+        to = new Date(now);
+        from = dateFloorLocal(now.getTime());
+        from.setDate(from.getDate() - 6);
+      } else {
+        to = new Date(now);
+        from = dateFloorLocal(now.getTime());
+        from.setDate(from.getDate() - 29);
+      }
+
+      fromDateEl.value = from.toISOString().slice(0, 10);
+      toDateEl.value = to.toISOString().slice(0, 10);
+
+      if (preset === "month") {
+        groupByEl.value = "month";
+      } else if (groupByEl.value === "month" && preset !== "month") {
+        groupByEl.value = "day";
+      }
+    }
+
+    function getActiveRange() {
+      const fromDate = new Date(fromDateEl.value + "T00:00:00");
+      const toDate = new Date(toDateEl.value + "T23:59:59.999");
+      return {
+        fromTs: fromDate.getTime(),
+        toTs: toDate.getTime()
+      };
+    }
+
+    function filteredSessions() {
+      const { fromTs, toTs } = getActiveRange();
+      return state.sessions.filter((s) => Number.isFinite(s.startTs) && s.startTs >= fromTs && s.startTs <= toTs);
+    }
+
+    function aggregateTotals(sessions, aicValueEuro) {
+      const totals = {
+        sessions: sessions.length,
+        modelTurns: 0,
+        toolCalls: 0,
+        inputTokens: 0,
+        inputNonCachedTokens: 0,
+        outputTokens: 0,
+        cachedTokens: 0,
+        totalTokens: 0,
+        errors: 0,
+        aic: 0,
+        euro: 0,
+        missingPriceTurns: 0
+      };
+
+      for (const s of sessions) {
+        totals.modelTurns += s.modelTurns;
+        totals.toolCalls += s.toolCalls;
+        totals.inputTokens += s.inputTokens;
+        totals.inputNonCachedTokens += Math.max(0, (s.inputTokens || 0) - (s.cachedTokens || 0));
+        totals.outputTokens += s.outputTokens;
+        totals.cachedTokens += s.cachedTokens;
+        totals.totalTokens += s.totalTokens;
+        totals.errors += s.errors;
+        totals.aic += s.aic;
+        totals.missingPriceTurns += s.missingPriceTurns;
+      }
+      totals.euro = totals.aic * aicValueEuro;
+      return totals;
+    }
+
+    function aggregateTrend(sessions, groupBy, aicValueEuro) {
+      const agg = new Map();
+      for (const s of sessions) {
+        const d = new Date(s.startTs);
+        const key = groupBy === "month"
+          ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+          : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const cur = agg.get(key) || { key, sessions: 0, aic: 0 };
+        cur.sessions += 1;
+        cur.aic += s.aic;
+        agg.set(key, cur);
+      }
+      const rows = [...agg.values()].sort((a, b) => a.key.localeCompare(b.key));
+      for (const r of rows) r.euro = r.aic * aicValueEuro;
+      return rows;
+    }
+
+    function aggregateModels(sessions, aicValueEuro) {
+      const agg = new Map();
+      for (const s of sessions) {
+        for (const m of (s.modelAgg || [])) {
+          const cur = agg.get(m.model) || { model: m.model, turns: 0, aic: 0 };
+          cur.turns += m.turns;
+          cur.aic += m.aic;
+          agg.set(m.model, cur);
+        }
+      }
+      const rows = [...agg.values()].sort((a, b) => b.aic - a.aic).slice(0, 10);
+      for (const r of rows) r.euro = r.aic * aicValueEuro;
+      return rows;
+    }
+
+    function renderCards(totals) {
+      const activityCards = [
+        ["Sessioni", fmtInt(totals.sessions), "nel periodo"],
+        ["Model Turns", fmtInt(totals.modelTurns), "richieste LLM"],
+        ["Tool Calls", fmtInt(totals.toolCalls), "chiamate tool"],
+        ["Errors", fmtInt(totals.errors), "status != ok"]
+      ];
+
+      const cachePct = totals.inputTokens > 0 ? (totals.cachedTokens / totals.inputTokens) * 100 : 0;
+
+      const activityHtml = activityCards.map(([label, value, hint]) => `
+        <article class="card">
+          <div class="label">${label}</div>
+          <div class="value">${value}</div>
+          <div class="hint">${hint}</div>
+        </article>
+      `).join("");
+
+      statsEl.innerHTML = `
+        <section class="stats-block">
+          <div class="stats-block-title">Attivita sessione</div>
+          <div class="stats-grid">${activityHtml}</div>
+        </section>
+
+        <section class="stats-block">
+          <div class="stats-block-title">Token e costo</div>
+          <div class="stats-grid">
+            <article class="card card-rich">
+              <div class="label">Input Tokens</div>
+              <div class="value">${fmtInt(totals.inputTokens)}</div>
+              <ul class="mini-list">
+                <li><span>Non cached</span><strong>${fmtInt(totals.inputNonCachedTokens)}</strong></li>
+                <li><span>Cached</span><strong>${fmtInt(totals.cachedTokens)}</strong></li>
+                <li><span>Cache ratio</span><strong>${fmtNum(cachePct, 1)}%</strong></li>
+              </ul>
+            </article>
+
+            <article class="card card-rich">
+              <div class="label">Output Tokens</div>
+              <div class="value">${fmtInt(totals.outputTokens)}</div>
+              <ul class="mini-list">
+                <li><span>Output tokens</span><strong>${fmtInt(totals.outputTokens)}</strong></li>
+              </ul>
+            </article>
+
+            <article class="card card-rich">
+              <div class="label">Total Tokens</div>
+              <div class="value">${fmtInt(totals.totalTokens)}</div>
+              <ul class="mini-list">
+                <li><span>Input + Output</span><strong>${fmtInt(totals.totalTokens)}</strong></li>
+              </ul>
+            </article>
+
+            <article class="card card-rich">
+              <div class="label">Costo Totale (€)</div>
+              <div class="value">${fmtEuro(totals.euro)}</div>
+              <ul class="mini-list">
+                <li><span>Copilot Usage (AIC)</span><strong>${fmtNum(totals.aic, 4)}</strong></li>
+                <li><span>Formula</span><strong>AIC x valore</strong></li>
+              </ul>
+            </article>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderBars(container, rows, valueSelector, labelBuilder, valueBuilder) {
+      if (!rows.length) {
+        container.innerHTML = `<div class="status">Nessun dato nel range selezionato.</div>`;
+        return;
+      }
+      const max = Math.max(...rows.map(valueSelector), 1);
+      container.innerHTML = rows.map((row) => {
+        const v = valueSelector(row);
+        const width = Math.max(2, (v / max) * 100);
+        return `
+          <div class="bar-row">
+            <div class="bar-head">
+              <span>${labelBuilder(row)}</span>
+              <span>${valueBuilder(row)}</span>
+            </div>
+            <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderTable(sessions, aicValueEuro) {
+      if (!sessions.length) {
+        sessionsBodyEl.innerHTML = `<tr><td colspan="12">Nessuna sessione nel range selezionato.</td></tr>`;
+        return;
+      }
+
+      const rows = [...sessions].sort((a, b) => (b.startTs || 0) - (a.startTs || 0));
+      sessionsBodyEl.innerHTML = rows.map((s) => {
+        const euro = s.aic * aicValueEuro;
+        const safeTitle = (s.title && String(s.title).trim()) ? String(s.title).trim() : "Titolo non disponibile";
+        return `
+          <tr>
+            <td>
+              <div class="session-main">
+                <div class="session-title" title="${safeTitle}">${safeTitle}</div>
+                <div class="session-id mono">${s.sessionId}</div>
+              </div>
+            </td>
+            <td>${fmtDate(s.startTs)}</td>
+            <td class="num">${fmtInt(s.modelTurns)}</td>
+            <td class="num">${fmtInt(s.toolCalls)}</td>
+            <td class="num">${fmtInt(s.inputTokens)}</td>
+            <td class="num">${fmtInt(s.cachedTokens)}</td>
+            <td class="num">${fmtInt(s.outputTokens)}</td>
+            <td class="num">${fmtInt(s.totalTokens)}</td>
+            <td class="num">${fmtInt(s.errors)}</td>
+            <td class="num">${fmtNum(s.aic, 4)}</td>
+            <td class="num">${fmtEuro(euro)}</td>
+            <td><button class="btn small" data-open-detail="${s.sessionId}" type="button">Apri</button></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function openSessionDetail(session, aicValueEuro) {
+      if (!session) return;
+      const title = (session.title && String(session.title).trim()) ? String(session.title).trim() : "Titolo non disponibile";
+      const euro = session.aic * aicValueEuro;
+      const inputNonCachedTokens = Math.max(0, (session.inputTokens || 0) - (session.cachedTokens || 0));
+
+      detailTitleEl.textContent = title;
+      detailSubtitleEl.textContent = `${session.sessionId} · ${fmtDate(session.startTs)}`;
+
+      detailKpisEl.innerHTML = `
+        <section class="detail-group">
+          <div class="detail-group-title">Attivita sessione</div>
+          <div class="kv-grid">
+            <div class="kv"><div class="k">Model Turns</div><div class="v">${fmtInt(session.modelTurns)}</div></div>
+            <div class="kv"><div class="k">Tool Calls</div><div class="v">${fmtInt(session.toolCalls)}</div></div>
+            <div class="kv"><div class="k">Errors</div><div class="v">${fmtInt(session.errors)}</div></div>
+          </div>
+        </section>
+
+        <section class="detail-group">
+          <div class="detail-group-title">Token e costo</div>
+          <div class="kv-grid">
+            <div class="kv"><div class="k">Input Tokens</div><div class="v">${fmtInt(session.inputTokens)}</div></div>
+            <div class="kv"><div class="k">Input Non Cached Tokens</div><div class="v">${fmtInt(inputNonCachedTokens)}</div></div>
+            <div class="kv"><div class="k">Cached Tokens</div><div class="v">${fmtInt(session.cachedTokens)}</div></div>
+            <div class="kv"><div class="k">Output Tokens</div><div class="v">${fmtInt(session.outputTokens)}</div></div>
+            <div class="kv"><div class="k">Total Tokens</div><div class="v">${fmtInt(session.totalTokens)}</div></div>
+            <div class="kv"><div class="k">AIC</div><div class="v">${fmtNum(session.aic, 4)}</div></div>
+            <div class="kv"><div class="k">Costo (€)</div><div class="v">${fmtEuro(euro)}</div></div>
+          </div>
+        </section>
+      `;
+
+      const modelRows = Array.isArray(session.modelAgg) ? session.modelAgg : [];
+      if (!modelRows.length) {
+        detailModelsBodyEl.innerHTML = `<tr><td colspan="4">Nessun dettaglio modello disponibile.</td></tr>`;
+      } else {
+        detailModelsBodyEl.innerHTML = modelRows.map((m) => `
+          <tr>
+            <td class="mono">${m.model}</td>
+            <td class="num">${fmtInt(m.turns)}</td>
+            <td class="num">${fmtNum(m.aic, 4)}</td>
+            <td class="num">${fmtEuro(m.aic * aicValueEuro)}</td>
+          </tr>
+        `).join("");
+      }
+
+      detailModalEl.classList.remove("hidden");
+    }
+
+    function closeSessionDetail() {
+      detailModalEl.classList.add("hidden");
+    }
+
+    function clearAutoRefreshTimer() {
+      if (!autoRefreshTimer) return;
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+
+    function startAutoRefresh() {
+      clearAutoRefreshTimer();
+      if (autoRefreshEnabledEl.value !== "on") return;
+      const seconds = Number(refreshIntervalEl.value || 30);
+      const intervalMs = Math.max(10, seconds) * 1000;
+      autoRefreshTimer = setInterval(() => {
+        refreshDelta({ silent: true });
+      }, intervalMs);
+    }
+
+    function applyDeltaPayload(payload, { silent = false } = {}) {
+      const changed = Array.isArray(payload.changed) ? payload.changed : [];
+      const removed = new Set(Array.isArray(payload.removedSessionIds) ? payload.removedSessionIds : []);
+
+      if (changed.length === 0 && removed.size === 0 && !payload.fullRebuild) return;
+
+      const byId = new Map(state.sessions.map((s) => [s.sessionId, s]));
+      for (const session of changed) {
+        if (!session || !session.sessionId) continue;
+        byId.set(session.sessionId, session);
+      }
+      for (const sessionId of removed) {
+        byId.delete(sessionId);
+      }
+
+      state.sessions = [...byId.values()];
+      if (payload.root) {
+        state.selectedRootPath = payload.root;
+        rootPathEl.value = payload.root;
+      }
+      render();
+
+      if (!silent) {
+        setStatus(`Aggiornamento completato: +${changed.length} / -${removed.size}. Totale sessioni: ${state.sessions.length}.`);
+      }
+    }
+
+    async function refreshDelta({ silent = false } = {}) {
+      const root = String(state.selectedRootPath || rootPathEl.value || "").trim();
+      if (!root || refreshInFlight) return;
+
+      refreshInFlight = true;
+      try {
+        const payload = await fetchJson(`/api/sessions-delta?root=${encodeURIComponent(root)}`);
+        applyDeltaPayload(payload, { silent });
+      } catch (error) {
+        if (!silent) {
+          setStatus(`Errore aggiornamento automatico: ${error.message}`, true);
+        }
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    function render() {
+      const aicValueEuro = Number(aicValueEl.value || 0.01);
+      const sessions = filteredSessions();
+      const totals = aggregateTotals(sessions, aicValueEuro);
+
+      loadedCountEl.textContent = `${state.sessions.length} sessioni caricate`;
+      renderCards(totals);
+
+      const trendRows = aggregateTrend(sessions, groupByEl.value, aicValueEuro);
+      renderBars(
+        trendEl,
+        trendRows,
+        (r) => r.euro,
+        (r) => `${r.key} (${r.sessions} sessioni)`,
+        (r) => `${fmtEuro(r.euro)} € · ${fmtNum(r.aic, 4)} AIC`
+      );
+
+      const modelRows = aggregateModels(sessions, aicValueEuro);
+      renderBars(
+        modelsEl,
+        modelRows,
+        (r) => r.euro,
+        (r) => `${r.model} (${r.turns} turn)`,
+        (r) => `${fmtEuro(r.euro)} € · ${fmtNum(r.aic, 4)} AIC`
+      );
+
+      renderTable(sessions, aicValueEuro);
+
+      const missing = totals.missingPriceTurns;
+      if (!state.selectedRootPath) {
+        setStatus("Nessun percorso configurato.", true);
+      } else if (missing > 0) {
+        setStatus(`Dati caricati da ${state.selectedRootPath}. Attenzione: ${missing} turn senza pricing in models.json.`, true);
+      } else {
+        setStatus(`Dati caricati da ${state.selectedRootPath}. Sessioni nel range: ${sessions.length}.`);
+      }
+    }
+
+    async function fetchJson(url) {
+      const response = await fetch(url);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      return data;
+    }
+
+    async function loadFromPath(pathValue) {
+      const root = String(pathValue || "").trim();
+      if (!root) {
+        setStatus("Percorso root vuoto.", true);
+        return;
+      }
+      setLoading(true, "Caricamento iniziale sessioni in corso...");
+      setStatus(`Lettura in corso da ${root}...`);
+      try {
+        const payload = await fetchJson(`/api/sessions?root=${encodeURIComponent(root)}`);
+        state.sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+        state.selectedRootPath = payload.root || root;
+        rootPathEl.value = state.selectedRootPath;
+        render();
+        configPanelEl.open = false;
+        setStatus(`Dati caricati da ${state.selectedRootPath}. Sessioni disponibili: ${state.sessions.length}.`);
+        startAutoRefresh();
+      } catch (error) {
+        setStatus(`Errore caricamento: ${error.message}`, true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function loadDefaultPath() {
+      setStatus("Recupero percorso standard...", false);
+      try {
+        const payload = await fetchJson("/api/default-root");
+        rootPathEl.value = payload.root || "";
+        await loadFromPath(rootPathEl.value);
+      } catch (error) {
+        setStatus(`Errore percorso standard: ${error.message}`, true);
+      }
+    }
+
+    document.getElementById("loadDefault").addEventListener("click", loadDefaultPath);
+    document.getElementById("applyPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
+    document.getElementById("reloadPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
+    refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
+    document.getElementById("applyFilters").addEventListener("click", render);
+    aicValueEl.addEventListener("change", render);
+    autoRefreshEnabledEl.addEventListener("change", startAutoRefresh);
+    refreshIntervalEl.addEventListener("change", startAutoRefresh);
+    groupByEl.addEventListener("change", render);
+    document.getElementById("closeDetail").addEventListener("click", closeSessionDetail);
+
+    detailModalEl.addEventListener("click", (event) => {
+      if (event.target === detailModalEl) closeSessionDetail();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeSessionDetail();
+    });
+
+    sessionsBodyEl.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-open-detail]");
+      if (!btn) return;
+      const sessionId = btn.getAttribute("data-open-detail");
+      const session = state.sessions.find((s) => s.sessionId === sessionId);
+      const aicValueEuro = Number(aicValueEl.value || 0.01);
+      openSessionDetail(session, aicValueEuro);
+    });
+
+    presetButtons.day.addEventListener("click", () => { setPreset("day"); render(); });
+    presetButtons.month.addEventListener("click", () => { setPreset("month"); render(); });
+    presetButtons.last7.addEventListener("click", () => { setPreset("last7"); render(); });
+    presetButtons.last30.addEventListener("click", () => { setPreset("last30"); render(); });
+
+    setPreset("day");
+    loadDefaultPath();
+  </script>
+</body>
+</html>
+
