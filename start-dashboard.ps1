@@ -31,7 +31,7 @@ Write-Host "[INFO] Percorso: $scriptDir" -ForegroundColor Yellow
 Write-Host ""
 
 # Start the Node.js server in background
-$serverProcess = Start-Process -FilePath "node" -ArgumentList "$scriptDir\copilot-cost-dashboard-server.js" `
+$serverProcess = Start-Process -FilePath "node" -ArgumentList "$scriptDir\app\copilot-cost-dashboard-server.js" `
   -WindowStyle Hidden -PassThru
 
 if ($serverProcess) {

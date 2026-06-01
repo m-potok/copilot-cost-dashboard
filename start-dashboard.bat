@@ -28,7 +28,7 @@ echo [INFO] Percorso: %SCRIPT_DIR%
 echo.
 
 REM Start the Node.js server in a new window
-start "Copilot Cost Dashboard Server" node "%SCRIPT_DIR%copilot-cost-dashboard-server.js"
+start "Copilot Cost Dashboard Server" node "%SCRIPT_DIR%app\copilot-cost-dashboard-server.js"
 
 REM Wait a moment for the server to start
 timeout /t 2 /nobreak

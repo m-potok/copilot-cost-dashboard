@@ -2,6 +2,11 @@
 
 Tracker per analizzare i costi delle sessioni Copilot Chat dal tuo workspace locale. Legge i debug-logs e calcola AIC (Abstract Integration Cost) con conversione a EUR.
 
+## Disclaimer
+
+I valori mostrati dal tool sono **indicativi** e hanno finalita di analisi interna.
+Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
+
 ## Installazione veloce
 
 ### 1. Requisiti
@@ -15,7 +20,7 @@ Fai doppio clic su **`start-dashboard.bat`**
 
 Oppure, da terminale PowerShell/CMD nella cartella del tracker:
 ```bash
-node copilot-cost-dashboard-server.js
+node app/copilot-cost-dashboard-server.js
 ```
 
 Poi apri nel browser: **http://127.0.0.1:4781**
@@ -68,10 +73,16 @@ I prezzi sono letti da `models.json` dentro ogni sessione debug-logs.
 ## Struttura cartelle
 
 ```
-copilot-cost-dashboard.html          # Dashboard (frontend)
-copilot-cost-dashboard-server.js     # Server Node.js (backend)
-start-dashboard.bat                  # Script di avvio automatico
-README.md                             # Questo file
+app/
+  copilot-cost-dashboard.html        # Dashboard (frontend)
+  copilot-cost-dashboard-server.js   # Server Node.js (backend)
+scripts/
+  build-standalone.bat               # Build EXE (wrapper)
+  build-standalone.ps1               # Build EXE (PowerShell)
+start-dashboard.bat                  # Avvio rapido dashboard (Windows)
+start-dashboard.ps1                  # Avvio rapido dashboard (PowerShell)
+package.json                         # Config build standalone
+README.md                            # Questo file
 ```
 
 ## Troubleshooting
@@ -83,7 +94,7 @@ README.md                             # Questo file
 
 ### "Port 4781 già in uso"
 - La porta è già occupata da un'altra applicazione
-- Modifica in `copilot-cost-dashboard-server.js`:
+- Modifica in `app/copilot-cost-dashboard-server.js`:
   ```javascript
   const PORT = 4781;  // Cambia numero (es: 4782)
   ```
@@ -104,6 +115,47 @@ Il tool è completamente self-contained. Per condividere con altri:
 1. Copia la cartella intera con i 3 file principali
 2. Chi riceve deve avere Node.js installato
 3. Doppio clic su `start-dashboard.bat` per avviare
+
+## EXE standalone
+
+Si, puoi generare un `.exe` standalone (Windows x64) con uno script automatico.
+
+### Build veloce
+
+Opzione 1 (consigliata): doppio clic su `scripts/build-standalone.bat`
+
+Opzione 2 (PowerShell):
+
+```powershell
+.\scripts\build-standalone.ps1
+```
+
+Lo script:
+
+1. Installa le dipendenze di build (`pkg`)
+2. Compila l'eseguibile
+3. Salva il file in `dist\copilot-cost-dashboard.exe`
+
+### Avvio EXE
+
+```powershell
+.\dist\copilot-cost-dashboard.exe
+```
+
+Poi apri nel browser:
+
+```
+http://127.0.0.1:4781
+```
+
+### Cosa condividere (modalita standalone)
+
+- `dist\copilot-cost-dashboard.exe`
+
+Note:
+
+- L'EXE e standalone: non richiede Node.js sul PC destinatario.
+- Al primo avvio potrebbe essere segnalato da SmartScreen (app non firmata): usa "Altre info" -> "Esegui comunque" in ambiente interno.
 
 ## Note tecniche
 

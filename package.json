@@ -1,0 +1,18 @@
+{
+  "name": "copilot-cost-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone builder for Copilot Debug Logs Cost Tracker",
+  "bin": "app/copilot-cost-dashboard-server.js",
+  "scripts": {
+    "build:exe": "pkg . --targets node18-win-x64 --output dist/copilot-cost-dashboard.exe"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "assets": [
+      "app/copilot-cost-dashboard.html"
+    ]
+  }
+}
