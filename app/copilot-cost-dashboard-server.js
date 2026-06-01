@@ -4,6 +4,7 @@ const path = require("path");
 const os = require("os");
 const { spawn } = require("child_process");
 const { URL } = require("url");
+const xlsx = require("xlsx");
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
@@ -572,6 +573,46 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         sendJson(res, 400, { error: error.message || "Errore refresh sessioni." });
       }
+      return;
+    }
+
+    if (reqUrl.pathname === "/api/export-excel") {
+      if (req.method !== "POST") {
+        sendJson(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", async () => {
+        try {
+          const payload = JSON.parse(body);
+          const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+          const aicValueEuro = Number(payload.aicValueEuro || 0.01);
+          const rows = sessions.map((s) => ({
+            Titolo: s.title || "(non disponibile)",
+            "ID Sessione": s.sessionId,
+            "Data Inizio": new Date((s.startTs || 0) * 1000).toLocaleString("it-IT"),
+            "Model Turns": s.modelTurns || 0,
+            "Tool Calls": s.toolCalls || 0,
+            "Input Tokens": s.inputTokens || 0,
+            Cached: s.cachedTokens || 0,
+            Output: s.outputTokens || 0,
+            Total: s.totalTokens || 0,
+            Errors: s.errors || 0,
+            AIC: Number((s.aic || 0).toFixed(4)),
+            EUR: Number((s.aic * aicValueEuro).toFixed(4))
+          }));
+          const ws = xlsx.utils.json_to_sheet(rows);
+          ws["!cols"] = [ { wch: 25 }, { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 } ];
+          const wb = xlsx.utils.book_new();
+          xlsx.utils.book_append_sheet(wb, ws, "Sessioni");
+          const excelBuffer = xlsx.write(wb, { bookType: "xlsx", type: "buffer" });
+          res.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": "attachment; filename=copilot-sessions.xlsx", "Content-Length": excelBuffer.length });
+          res.end(excelBuffer);
+        } catch (error) {
+          sendJson(res, 400, { error: error.message || "Errore generazione Excel" });
+        }
+      });
       return;
     }
 

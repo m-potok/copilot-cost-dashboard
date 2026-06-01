@@ -533,6 +533,7 @@
             <button id="applyPath" class="btn" type="button">Usa percorso inserito</button>
             <button id="reloadPath" class="btn" type="button">Ricarica percorso corrente</button>
             <button id="refreshNow" class="btn" type="button">Aggiorna ora</button>
+            <button id="exportExcel" class="btn" type="button">Export Excel</button>
           </div>
 
           <div class="inputs">
@@ -598,8 +599,6 @@
       <div id="status" class="status">Avvio in corso...</div>
       <div class="disclaimer">
         Disclaimer: i valori mostrati sono indicativi e non rappresentano il costo finale effettivo di fatturazione.
-        <br><br>
-        <strong>Nota:</strong> Il tracker include i token della sessione principale più i token di tutti i subagent (child session).
       </div>
     </section>
 
@@ -1189,9 +1188,42 @@
       }
     }
 
+    async function exportToExcel() {
+      const aicValueEuro = Number(aicValueEl.value || 0.01);
+      const sessions = filteredSessions();
+      if (!sessions.length) {
+        setStatus("Nessun dato da esportare nel range selezionato.", true);
+        return;
+      }
+      setLoading(true, "Generazione file Excel...");
+      try {
+        const response = await fetch("/api/export-excel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessions: sessions, aicValueEuro: aicValueEuro })
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "copilot-sessions-" + new Date().toISOString().split("T")[0] + ".xlsx";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setStatus("File Excel esportato: " + sessions.length + " sessioni.");
+      } catch (error) {
+        setStatus("Errore esportazione Excel: " + error.message, true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
     document.getElementById("loadDefault").addEventListener("click", loadDefaultPath);
     document.getElementById("applyPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
     document.getElementById("reloadPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
+    document.getElementById("exportExcel").addEventListener("click", exportToExcel);
     refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
     document.getElementById("applyFilters").addEventListener("click", render);
     aicValueEl.addEventListener("change", render);

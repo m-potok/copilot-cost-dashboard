@@ -7,8 +7,6 @@ Tracker per analizzare i costi delle sessioni Copilot Chat dal tuo workspace loc
 I valori mostrati dal tool sono **indicativi** e hanno finalita di analisi interna.
 Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
 
-**Nota**: Il tracker include i token della sessione principale + i token di tutti i subagent e child session referenced nel debug-log.
-
 ## Installazione veloce
 
 ### 1. Requisiti

@@ -7,6 +7,9 @@
   "scripts": {
     "build:exe": "pkg . --targets node18-win-x64 --output dist/copilot-cost-dashboard.exe"
   },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  },
   "devDependencies": {
     "pkg": "^5.8.1"
   },
