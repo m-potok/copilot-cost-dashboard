@@ -10,6 +10,24 @@ const PORT = 4781;
 const BASE_DIR = __dirname;
 const DASHBOARD_FILE = path.join(BASE_DIR, "copilot-cost-dashboard.html");
 const rootCaches = new Map();
+let hasLoggedFirstRequest = false;
+
+function color(text, code) {
+  if (!process.stdout || !process.stdout.isTTY) return text;
+  return `\x1b[${code}m${text}\x1b[0m`;
+}
+
+function logInfo(text) {
+  console.log(color(text, "96"));
+}
+
+function logSuccess(text) {
+  console.log(color(text, "92"));
+}
+
+function logTitle(text) {
+  console.log(color(text, "97;1"));
+}
 
 function getDefaultRoot() {
   return path.join(os.homedir(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
@@ -487,6 +505,11 @@ const server = http.createServer(async (req, res) => {
   try {
     const reqUrl = new URL(req.url || "/", `http://${HOST}:${PORT}`);
 
+    if (!hasLoggedFirstRequest) {
+      hasLoggedFirstRequest = true;
+      logInfo(`[INFO] First request received: ${req.method || "GET"} ${reqUrl.pathname}`);
+    }
+
     if (reqUrl.pathname === "/") {
       await serveDashboard(res);
       return;
@@ -536,14 +559,22 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   const dashboardUrl = `http://${HOST}:${PORT}`;
-  console.log(`Copilot Cost Dashboard server running on ${dashboardUrl}`);
-  console.log(`Default root: ${getDefaultRoot()}`);
+  logTitle("============================================================");
+  logTitle(" Copilot Cost Dashboard");
+  logTitle("============================================================");
+  logSuccess(`Copilot Cost Dashboard server running on ${dashboardUrl}`);
+  logInfo(`Default root: ${getDefaultRoot()}`);
+  logSuccess("Status: READY");
+  logInfo("Press CTRL+C to stop the server.");
 
   const shouldAutoOpen = process.env.NO_AUTO_OPEN_BROWSER !== "1";
   if (shouldAutoOpen) {
     const opened = openBrowser(dashboardUrl);
+    if (opened) {
+      logSuccess(`[INFO] Browser opened automatically: ${dashboardUrl}`);
+    }
     if (!opened) {
-      console.log(`Open browser manually: ${dashboardUrl}`);
+      logInfo(`Open browser manually: ${dashboardUrl}`);
     }
   }
 });

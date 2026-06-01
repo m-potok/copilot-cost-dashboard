@@ -80,7 +80,6 @@ scripts/
   build-standalone.bat               # Build EXE (wrapper)
   build-standalone.ps1               # Build EXE (PowerShell)
 start-dashboard.bat                  # Avvio rapido dashboard (Windows)
-start-dashboard.ps1                  # Avvio rapido dashboard (PowerShell)
 package.json                         # Config build standalone
 README.md                            # Questo file
 ```
