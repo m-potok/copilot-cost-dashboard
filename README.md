@@ -7,9 +7,7 @@ Tracker per analizzare i costi delle sessioni Copilot Chat dal tuo workspace loc
 I valori mostrati dal tool sono **indicativi** e hanno finalita di analisi interna.
 Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
 
-**Nota importante - Token dei subagent**: Il tracker conteggia solo i token della sessione LLM principale.
-I token generati dai subagent (tool invocati come processi separati, es. `runSubagent`) hanno i propri debug-logs
-e non vengono aggregati nel conto totale. Per una vista completa dei costi, è necessario consultare i log dei subagent separatamente.
+**Nota**: Il tracker include i token della sessione principale + i token di tutti i subagent e child session referenced nel debug-log.
 
 ## Installazione veloce
 
@@ -62,8 +60,8 @@ Alla prima apertura, il tracker carica automaticamente:
 | **AIC** | Abstract Integration Cost (formula token_prices) |
 | **Costo (€)** | AIC × valore configurato |
 
-**Limitazione**: Il conteggio include solo i token della sessione principale. I token dei subagent, tool call con log separato,
-e processi paralleli non vengono tracciati dal dashboard.
+**Nota**: Il tracker aggrega automaticamente i token dalla sessione principale e da tutti i child session (subagent).
+I log dei child session sono referenced nel main.jsonl tramite `child_session_ref` e vengono letti e aggregati nel totale.
 
 ## Formula di calcolo
 

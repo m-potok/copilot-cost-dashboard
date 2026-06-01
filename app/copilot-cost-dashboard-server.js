@@ -121,6 +121,19 @@ function findTitleLogFile(rows) {
   return null;
 }
 
+function findChildSessionLogFiles(rows) {
+  const childFiles = [];
+  for (const row of rows) {
+    if (!row || row.type !== "child_session_ref") continue;
+    const attrs = row.attrs || {};
+    const childLogFile = attrs.childLogFile;
+    if (childLogFile && String(childLogFile).trim() && (row.name !== "title" && attrs.label !== "title")) {
+      childFiles.push(String(childLogFile).trim());
+    }
+  }
+  return childFiles;
+}
+
 function extractTitleFromTitleRows(rows) {
   for (const row of rows) {
     if (!row || row.type !== "agent_response") continue;
@@ -245,7 +258,18 @@ async function readSessionFromDirectory(sessionDir, sessionId) {
     }
   }
 
-  return analyzeSession(sessionId, rows, priceMap, sessionTitle);
+  let allRows = [...rows];
+  const childLogFiles = findChildSessionLogFiles(rows);
+  for (const childLogFile of childLogFiles) {
+    const childPath = path.join(sessionDir, childLogFile);
+    const childText = await safeReadText(childPath);
+    if (childText) {
+      const childRows = parseJsonl(childText);
+      allRows = allRows.concat(childRows);
+    }
+  }
+
+  return analyzeSession(sessionId, allRows, priceMap, sessionTitle);
 }
 
 async function buildSessionFingerprint(sessionDir) {
