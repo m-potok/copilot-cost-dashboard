@@ -530,6 +530,7 @@
         <div class="config-body">
           <div class="toolbar">
             <button id="loadDefault" class="btn primary" type="button">Carica cartella standard</button>
+            <button id="pickRoot" class="btn" type="button">Scegli cartella...</button>
             <button id="applyPath" class="btn" type="button">Usa percorso inserito</button>
             <button id="reloadPath" class="btn" type="button">Ricarica percorso corrente</button>
             <button id="refreshNow" class="btn" type="button">Aggiorna ora</button>
@@ -1155,8 +1156,8 @@
       }
     }
 
-    async function fetchJson(url) {
-      const response = await fetch(url);
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       return data;
@@ -1197,6 +1198,21 @@
       }
     }
 
+    async function pickRootPath() {
+      setStatus("Apertura selettore cartella...", false);
+      try {
+        const payload = await fetchJson("/api/pick-root", { method: "POST" });
+        if (payload.canceled || !payload.path) {
+          setStatus("Selezione cartella annullata.");
+          return;
+        }
+        rootPathEl.value = payload.path;
+        await loadFromPath(payload.path);
+      } catch (error) {
+        setStatus(`Errore folder picker: ${error.message}`, true);
+      }
+    }
+
     async function exportToExcel() {
       const aicValueEuro = Number(aicValueEl.value || 0.01);
       const sessions = filteredSessions();
@@ -1230,6 +1246,7 @@
     }
 
     document.getElementById("loadDefault").addEventListener("click", loadDefaultPath);
+    document.getElementById("pickRoot").addEventListener("click", pickRootPath);
     document.getElementById("applyPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
     document.getElementById("reloadPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
     document.getElementById("exportExcel").addEventListener("click", exportToExcel);
@@ -1263,6 +1280,7 @@
     presetButtons.last7.addEventListener("click", () => { setPreset("last7"); render(); });
     presetButtons.last30.addEventListener("click", () => { setPreset("last30"); render(); });
 
+    groupByEl.value = "day";
     setPreset("day");
     loadDefaultPath();
   </script>

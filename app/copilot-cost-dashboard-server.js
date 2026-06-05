@@ -75,12 +75,27 @@ function buildModelPriceMap(modelsText) {
     if (!Array.isArray(data)) return map;
     for (const item of data) {
       const prices = item && item.billing && item.billing.token_prices && item.billing.token_prices.default;
-      if (!item || !item.id || !prices) continue;
-      const normalized = {
-        input_price: Number(prices.input_price || 0),
-        output_price: Number(prices.output_price || 0),
-        cache_price: Number(prices.cache_price || 0)
-      };
+      const multiplier = Number((item && item.billing && item.billing.multiplier) || 0);
+      if (!item || !item.id) continue;
+
+      let normalized = null;
+      if (prices) {
+        normalized = {
+          input_price: Number(prices.input_price || 0),
+          output_price: Number(prices.output_price || 0),
+          cache_price: Number(prices.cache_price || 0)
+        };
+      } else if (Number.isFinite(multiplier) && multiplier > 0) {
+        // Newer model catalogs expose a multiplier instead of token_prices.
+        // Use multiplier as a pragmatic fallback to keep AIC/EUR non-zero.
+        normalized = {
+          input_price: multiplier,
+          output_price: multiplier,
+          cache_price: multiplier
+        };
+      }
+
+      if (!normalized) continue;
       map.set(String(item.id), normalized);
       if (item.version) map.set(String(item.version), normalized);
       if (item.name) map.set(String(item.name), normalized);
@@ -109,6 +124,157 @@ function getPriceForModel(priceMap, modelId) {
     if (source.includes(target) || target.includes(source)) return v;
   }
   return null;
+}
+
+function extractChatSessionTurns(chatSessionText) {
+  if (!chatSessionText) return [];
+
+  const turns = [];
+
+  // Primary strategy: parse full snapshots (kind=0) and read per-request usage directly.
+  for (const rawLine of chatSessionText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    const requests = row && row.kind === 0 && row.v && Array.isArray(row.v.requests)
+      ? row.v.requests
+      : null;
+    if (!requests) continue;
+
+    for (const req of requests) {
+      const input = Number((req && (req.promptTokens ?? req.inputTokens)) || 0);
+      const output = Number((req && (req.completionTokens ?? req.outputTokens)) || 0);
+      const modelId = String(
+        (req && (req.resolvedModel || req.modelId || (req.inputState && req.inputState.selectedModel && req.inputState.selectedModel.metadata && req.inputState.selectedModel.metadata.id))) ||
+        "unknown"
+      ).trim() || "unknown";
+
+      if (!Number.isFinite(input) || !Number.isFinite(output)) continue;
+      if (input <= 0 && output <= 0) continue;
+      turns.push({ modelId, input, output });
+    }
+  }
+
+  // Secondary strategy: regex extraction for incremental/patch rows that still contain usage fragments.
+  const patterns = [
+    /"(?:promptTokens|inputTokens)"\s*:\s*(\d+)[\s\S]{0,1200}?"(?:completionTokens|outputTokens)"\s*:\s*(\d+)[\s\S]{0,2000}?"(?:modelId|resolvedModel|model)"\s*:\s*"([^"]+)"/g,
+    /"(?:modelId|resolvedModel|model)"\s*:\s*"([^"]+)"[\s\S]{0,2000}?"(?:promptTokens|inputTokens)"\s*:\s*(\d+)[\s\S]{0,1200}?"(?:completionTokens|outputTokens)"\s*:\s*(\d+)/g
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(chatSessionText)) !== null) {
+      const modelFirst = pattern === patterns[1];
+      const modelId = String(modelFirst ? match[1] : match[3] || "unknown").trim() || "unknown";
+      const input = Number(modelFirst ? match[2] : match[1] || 0);
+      const output = Number(modelFirst ? match[3] : match[2] || 0);
+      if (!Number.isFinite(input) || !Number.isFinite(output)) continue;
+      if (input <= 0 && output <= 0) continue;
+      turns.push({ modelId, input, output });
+    }
+  }
+
+  if (turns.length <= 1) return turns;
+
+  // Some snapshots may repeat near-identical fragments; dedupe exact triplets while preserving order.
+  const seen = new Set();
+  const deduped = [];
+  for (const turn of turns) {
+    const key = `${turn.modelId}|${turn.input}|${turn.output}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(turn);
+  }
+  return deduped;
+}
+
+function extractTitleFromChatSessionText(chatSessionText) {
+  if (!chatSessionText) return null;
+
+  for (const rawLine of chatSessionText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (!row || row.kind !== 0 || !row.v) continue;
+
+    const customTitle = String(row.v.customTitle || "").trim();
+    if (customTitle) return customTitle;
+
+    const requests = Array.isArray(row.v.requests) ? row.v.requests : [];
+    for (const req of requests) {
+      const messageText = String(req && req.message && req.message.text || "").trim();
+      if (messageText) return messageText.slice(0, 120);
+    }
+  }
+
+  return null;
+}
+
+function buildSessionFromFallbackTurns(sessionId, baseSummary, turns, priceMap) {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cachedTokens = 0;
+  let aic = 0;
+  let missingPriceTurns = 0;
+  const modelAgg = new Map();
+
+  for (const turn of turns) {
+    const input = Math.max(0, Number(turn.input || 0));
+    const output = Math.max(0, Number(turn.output || 0));
+    const cached = 0;
+    const modelId = String(turn.modelId || "unknown");
+
+    inputTokens += input;
+    outputTokens += output;
+    cachedTokens += cached;
+
+    const prices = getPriceForModel(priceMap, modelId);
+    let turnAic = 0;
+    if (prices) {
+      turnAic = ((input * prices.input_price) + (cached * prices.cache_price) + (output * prices.output_price)) / 1000000;
+    } else {
+      missingPriceTurns += 1;
+    }
+    aic += turnAic;
+
+    const current = modelAgg.get(modelId) || { model: modelId, turns: 0, aic: 0 };
+    current.turns += 1;
+    current.aic += turnAic;
+    modelAgg.set(modelId, current);
+  }
+
+  return {
+    sessionId,
+    title: baseSummary.title || null,
+    startTs: baseSummary.startTs || null,
+    endTs: baseSummary.endTs || null,
+    modelTurns: turns.length,
+    toolCalls: baseSummary.toolCalls || 0,
+    inputTokens,
+    outputTokens,
+    cachedTokens,
+    totalTokens: inputTokens + outputTokens,
+    errors: baseSummary.errors || 0,
+    aic,
+    missingPriceTurns,
+    autoDiscountTurns: 0,
+    autoDiscountAmount: 0,
+    modelAgg: [...modelAgg.values()].sort((a, b) => b.aic - a.aic)
+  };
 }
 
 function isAutoModelRequest(row) {
@@ -294,7 +460,20 @@ async function readSessionFromDirectory(sessionDir, sessionId) {
     }
   }
 
-  return analyzeSession(sessionId, allRows, priceMap, sessionTitle);
+  const workspaceDir = path.resolve(sessionDir, "..", "..", "..");
+  const chatSessionPath = path.join(workspaceDir, "chatSessions", `${sessionId}.jsonl`);
+  const chatSessionText = await safeReadText(chatSessionPath);
+  const titleFromChatSession = extractTitleFromChatSessionText(chatSessionText);
+
+  const primary = analyzeSession(sessionId, allRows, priceMap, sessionTitle || titleFromChatSession);
+  if (primary.modelTurns > 0) return primary;
+
+  if (!chatSessionText) return primary;
+
+  const fallbackTurns = extractChatSessionTurns(chatSessionText);
+  if (!fallbackTurns.length) return primary;
+
+  return buildSessionFromFallbackTurns(sessionId, primary, fallbackTurns, priceMap);
 }
 
 async function buildSessionFingerprint(sessionDir) {
@@ -536,6 +715,55 @@ function openBrowser(url) {
   }
 }
 
+function pickDirectoryNative() {
+  return new Promise((resolve, reject) => {
+    if (process.platform !== "win32") {
+      reject(new Error("Folder picker nativo disponibile solo su Windows in questa versione."));
+      return;
+    }
+
+    const script = [
+      "Add-Type -AssemblyName System.Windows.Forms",
+      "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog",
+      "$dlg.Description = 'Seleziona la cartella root dei logs'",
+      "$dlg.ShowNewFolderButton = $false",
+      "$result = $dlg.ShowDialog()",
+      "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.SelectedPath }"
+    ].join("; ");
+
+    const child = spawn("powershell.exe", ["-NoProfile", "-STA", "-Command", script], {
+      windowsHide: true
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk || "");
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk || "");
+    });
+
+    child.on("error", (error) => {
+      reject(new Error(error.message || "Errore apertura folder picker."));
+    });
+
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error((stderr || "Errore esecuzione folder picker.").trim()));
+        return;
+      }
+      const selectedPath = stdout.trim();
+      if (!selectedPath) {
+        resolve(null);
+        return;
+      }
+      resolve(selectedPath);
+    });
+  });
+}
+
 async function serveDashboard(res) {
   const html = await safeReadText(DASHBOARD_FILE);
   if (!html) {
@@ -566,6 +794,23 @@ const server = http.createServer(async (req, res) => {
 
     if (reqUrl.pathname === "/api/default-root") {
       sendJson(res, 200, { root: getDefaultRoot() });
+      return;
+    }
+
+    if (reqUrl.pathname === "/api/pick-root") {
+      if (req.method !== "POST") {
+        sendJson(res, 405, { error: "Method not allowed" });
+        return;
+      }
+      try {
+        const selectedPath = await pickDirectoryNative();
+        sendJson(res, 200, {
+          canceled: !selectedPath,
+          path: selectedPath || null
+        });
+      } catch (error) {
+        sendJson(res, 400, { error: error.message || "Errore apertura folder picker." });
+      }
       return;
     }
 
