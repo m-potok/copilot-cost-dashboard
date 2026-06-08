@@ -788,12 +788,7 @@
 
       fromDateEl.value = from.toISOString().slice(0, 10);
       toDateEl.value = to.toISOString().slice(0, 10);
-
-      if (preset === "month") {
-        groupByEl.value = "month";
-      } else if (groupByEl.value === "month" && preset !== "month") {
-        groupByEl.value = "day";
-      }
+      groupByEl.value = "day";
     }
 
     function getActiveRange() {
