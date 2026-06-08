@@ -337,8 +337,21 @@ function extractTitleFromTitleRows(rows) {
   return null;
 }
 
+function isMeaningfulSessionStartEvent(row) {
+  if (!row || !row.type) return false;
+  const type = String(row.type);
+  return type === "session_start" ||
+    type === "user_message" ||
+    type === "turn_start" ||
+    type === "llm_request" ||
+    type === "agent_response" ||
+    type === "tool_call" ||
+    type === "turn_end";
+}
+
 function analyzeSession(sessionId, rows, priceMap, title = null) {
-  let minTs = Number.POSITIVE_INFINITY;
+  let minTsAny = Number.POSITIVE_INFINITY;
+  let minTsMeaningful = Number.POSITIVE_INFINITY;
   let maxTs = Number.NEGATIVE_INFINITY;
   let modelTurns = 0;
   let toolCalls = 0;
@@ -355,7 +368,8 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
   for (const row of rows) {
     const ts = Number(row && row.ts);
     if (Number.isFinite(ts)) {
-      if (ts < minTs) minTs = ts;
+      if (ts < minTsAny) minTsAny = ts;
+      if (isMeaningfulSessionStartEvent(row) && ts < minTsMeaningful) minTsMeaningful = ts;
       if (ts > maxTs) maxTs = ts;
     }
 
@@ -401,7 +415,9 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
   return {
     sessionId,
     title,
-    startTs: Number.isFinite(minTs) ? minTs : null,
+    startTs: Number.isFinite(minTsMeaningful)
+      ? minTsMeaningful
+      : (Number.isFinite(minTsAny) ? minTsAny : null),
     endTs: Number.isFinite(maxTs) ? maxTs : null,
     modelTurns,
     toolCalls,
