@@ -58,6 +58,40 @@ Alla prima apertura, il tracker carica automaticamente:
 | **AIC** | Abstract Integration Cost (formula token_prices) |
 | **Costo (€)** | AIC × valore configurato |
 
+### Progetti e modifiche al codice
+
+Le sessioni vengono associate al progetto leggendo `workspace.json` nello stesso
+workspace storage: `folder` identifica una cartella, mentre `workspace`
+identifica un workspace `.code-workspace`. Se il file manca o non è leggibile,
+la sessione viene mostrata come **Non identificato**.
+
+Il dashboard legge inoltre `chatEditingSessions/<sessionId>/state.json` e i
+`editedFileEvents` del transcript `chatSessions/<sessionId>.jsonl`. Quando il
+transcript non contiene l'evento per-request, usa
+`recentSnapshot.entries[].state` insieme a `telemetryInfo.requestId` e alla
+risorsa del file: in questo modo anche un undo esplicito resta classificato
+come rifiutato senza confondere lo stato finale del file con altre richieste.
+Le
+operazioni vengono deduplicate usando `requestId`, `epoch`, URI e contenuto
+dell'hunk. Gli enum VS Code usati sono `eventKind=1` (accettata), `2`
+(rifiutata), `3` (modifica manuale) e `state=0/1/2` (modified/accepted/rejected).
+Quando non è possibile collegare un'operazione a un segnale per-request, il
+dashboard la marca come **non classificata (fallback)** invece di attribuirla
+silenziosamente ad uno stato finale.
+
+Le sessioni senza editing state restano disponibili e riportano metriche di
+editing a zero o non disponibili. Le righe sono conteggiate per hunk: le
+operazioni streaming duplicate vengono ignorate, mentre due hunk distinti
+dello stesso request/epoch restano separati. La stima delle righe rimosse si
+basa sul range VS Code; per `delete`, se il contenuto non è presente, il dato
+non è ricostruibile e rimane non classificato.
+
+Il filtro **Progetto** consente il drill-down per cartella/workspace. Con
+**Tutti i progetti** viene mostrata una tabella aggregata con sessioni, token,
+AIC, file e righe per stato. Il dettaglio sessione elenca file, operazioni,
+request/epoch e indica i fallback non classificati. L'export Excel include il progetto
+nella scheda `Sessioni` e una scheda aggregata `Progetti`.
+
 **Nota**: Il tracker aggrega automaticamente i token dalla sessione principale e da tutti i child session (subagent).
 I log dei child session sono referenced nel main.jsonl tramite `child_session_ref` e vengono letti e aggregati nel totale.
 

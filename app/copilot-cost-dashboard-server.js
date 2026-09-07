@@ -457,6 +457,269 @@ async function statSafe(filePath) {
   }
 }
 
+function decodeFileUri(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (!raw.startsWith("file:")) return raw;
+  try {
+    const url = new URL(raw);
+    const pathname = decodeURIComponent(url.pathname);
+    return pathname.replace(/^\/([A-Za-z]):/, "$1:").replace(/\//g, path.sep);
+  } catch {
+    return raw.replace(/^file:\/\//, "").replace(/\//g, path.sep);
+  }
+}
+
+function lineCount(text) {
+  const value = String(text || "");
+  return value ? value.replace(/\r?\n$/, "").split(/\r?\n/).length : 0;
+}
+
+function editingStatusFromSignal(signal) {
+  const eventKind = Number(signal && signal.eventKind);
+  if (eventKind === 1) return "accepted";
+  if (eventKind === 2) return "rejected";
+  if (eventKind === 3) return "manual";
+  const state = Number(signal && signal.state);
+  if (state === 1) return "accepted";
+  if (state === 2) return "rejected";
+  if (state === 0) return "inferred";
+  return "inferred";
+}
+
+function collectEditedFileSignals(value, signals = [], requestId = null) {
+  if (!value || typeof value !== "object") return signals;
+  if (Array.isArray(value)) {
+    for (const item of value) collectEditedFileSignals(item, signals, requestId);
+    return signals;
+  }
+  const currentRequestId = value.requestId || requestId;
+  if (Array.isArray(value.editedFileEvents)) {
+    for (const event of value.editedFileEvents) {
+      signals.push({
+        requestId: currentRequestId ? String(currentRequestId) : null,
+        uri: event && event.uri && (event.uri.fsPath || event.uri.external || event.uri.path),
+        eventKind: event && event.eventKind,
+        state: event && event.state
+      });
+    }
+  }
+  for (const child of Object.values(value)) collectEditedFileSignals(child, signals, currentRequestId);
+  return signals;
+}
+
+function buildEditingSignalMap(chatSessionText) {
+  const map = new Map();
+  for (const row of parseJsonl(chatSessionText || "")) {
+    for (const signal of collectEditedFileSignals(row)) {
+      if (!signal.requestId && !signal.uri) continue;
+      const uri = decodeFileUri(signal.uri);
+      const key = `${signal.requestId || "*"}|${uri || "*"}`;
+      map.set(key, editingStatusFromSignal(signal));
+      if (uri) {
+        const wildcardKey = `*|${path.normalize(uri)}`;
+        const previous = map.get(wildcardKey);
+        const current = editingStatusFromSignal(signal);
+        map.set(wildcardKey, previous && previous !== current ? "inferred" : current);
+      }
+    }
+  }
+  return map;
+}
+
+function getEditingStatus(signalMap, requestId, uri) {
+  const normalizedUri = path.normalize(String(uri || ""));
+  return signalMap.get(`${requestId || "*"}|${normalizedUri}`) ||
+    signalMap.get(`${requestId || "*"}|${String(uri || "")}`) ||
+    signalMap.get(`*|${normalizedUri}`) ||
+    "inferred";
+}
+
+function countLineChanges(beforeText, afterText) {
+  const before = String(beforeText || "").split(/\r?\n/);
+  const after = String(afterText || "").split(/\r?\n/);
+  const dp = Array.from({ length: before.length + 1 }, () => Array(after.length + 1).fill(0));
+  for (let i = before.length - 1; i >= 0; i -= 1) {
+    for (let j = after.length - 1; j >= 0; j -= 1) {
+      dp[i][j] = before[i] === after[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const unchanged = dp[0][0];
+  return {
+    added: Math.max(0, after.length - unchanged),
+    removed: Math.max(0, before.length - unchanged)
+  };
+}
+
+function buildSnapshotSignalMap(state) {
+  const map = new Map();
+  const entries = state && state.recentSnapshot && Array.isArray(state.recentSnapshot.entries)
+    ? state.recentSnapshot.entries
+    : [];
+  for (const entry of entries) {
+    const requestId = entry && entry.telemetryInfo && entry.telemetryInfo.requestId;
+    const uri = decodeFileUri(entry && (entry.resource || entry.snapshotUri));
+    if (!requestId || !uri || !entry || !Number.isFinite(Number(entry.state))) continue;
+    const status = editingStatusFromSignal({ state: entry.state });
+    map.set(String(requestId), status);
+    map.set(`${requestId}|${path.normalize(uri)}`, status);
+  }
+  return map;
+}
+
+function getSnapshotRequestIds(state) {
+  const entries = state && state.recentSnapshot && Array.isArray(state.recentSnapshot.entries)
+    ? state.recentSnapshot.entries
+    : [];
+  return new Set(entries
+    .map((entry) => entry && entry.telemetryInfo && entry.telemetryInfo.requestId)
+    .filter(Boolean)
+    .map(String));
+}
+
+function getLatestRequestId(state) {
+  const checkpoints = state && state.timeline && Array.isArray(state.timeline.checkpoints)
+    ? state.timeline.checkpoints
+    : [];
+  return checkpoints.reduce((latest, checkpoint) => {
+    if (!checkpoint || !checkpoint.requestId) return latest;
+    return !latest || Number(checkpoint.epoch || 0) > Number(latest.epoch || 0)
+      ? checkpoint
+      : latest;
+  }, null)?.requestId || null;
+}
+
+function buildTimelineSignalMap(state) {
+  const map = new Map();
+  const checkpoints = state && state.timeline && Array.isArray(state.timeline.checkpoints)
+    ? state.timeline.checkpoints
+    : [];
+  for (const checkpoint of checkpoints) {
+    if (!checkpoint || !checkpoint.requestId) continue;
+    if (checkpoint.undoStopId) {
+      map.set(String(checkpoint.requestId), "rejected");
+    }
+  }
+  return map;
+}
+
+function getBaselineContent(state, requestId, uri) {
+  const baselines = state && state.timeline && Array.isArray(state.timeline.fileBaselines)
+    ? state.timeline.fileBaselines
+    : [];
+  const target = path.normalize(String(uri || ""));
+  for (const item of baselines) {
+    if (!Array.isArray(item) || item.length < 2) continue;
+    const baseline = item[1] || {};
+    const baselineUri = decodeFileUri(baseline.uri && (baseline.uri.fsPath || baseline.uri.external || baseline.uri.path));
+    if (baseline.requestId === requestId && baselineUri && path.normalize(baselineUri) === target) {
+      return baseline.content;
+    }
+  }
+  return null;
+}
+
+function getOperationLines(operation, baselineContent = null) {
+  if (!operation) return { added: 0, removed: 0 };
+  if (operation.type === "create") return { added: lineCount(operation.initialContent), removed: 0 };
+  if (operation.type === "delete") return { added: 0, removed: lineCount(operation.content || operation.initialContent) };
+  const edit = Array.isArray(operation.edits) ? operation.edits[0] : null;
+  const range = edit && edit.range;
+  if (baselineContent !== null && range && Number(range.startLineNumber) <= 1 &&
+      Number(range.endLineNumber) >= lineCount(baselineContent)) {
+    return countLineChanges(baselineContent, edit && edit.text);
+  }
+  return {
+    added: lineCount(edit && edit.text),
+    removed: range ? Math.max(0, Number(range.endLineNumber || 0) - Number(range.startLineNumber || 0)) : 0
+  };
+}
+
+function summarizeEditingOperations(stateText, signalMap) {
+  const empty = {
+    available: false,
+    files: 0,
+    operations: 0,
+    addedAccepted: 0,
+    removedAccepted: 0,
+    addedRejected: 0,
+    removedRejected: 0,
+    addedManual: 0,
+    removedManual: 0,
+    addedInferred: 0,
+    removedInferred: 0,
+    details: []
+  };
+  if (!stateText) return empty;
+  let state;
+  try {
+    state = JSON.parse(stateText);
+  } catch {
+    return empty;
+  }
+  const operations = state.timeline && Array.isArray(state.timeline.operations) ? state.timeline.operations : [];
+  if (!operations.length) return { ...empty, available: true };
+  const snapshotSignalMap = buildSnapshotSignalMap(state);
+  const snapshotRequestIds = getSnapshotRequestIds(state);
+  const latestRequestId = getLatestRequestId(state);
+  const timelineSignalMap = buildTimelineSignalMap(state);
+  const seen = new Set();
+  const byFile = new Map();
+  for (const operation of operations) {
+    const uri = decodeFileUri(operation.uri && (operation.uri.fsPath || operation.uri.external || operation.uri.path)) || "(file non identificato)";
+    const edit = Array.isArray(operation.edits) ? operation.edits[0] : null;
+    const signature = JSON.stringify([
+      operation.requestId || null, operation.epoch || null, operation.type || null, uri,
+      edit && edit.range ? edit.range : null, edit && edit.text ? edit.text : operation.initialContent || ""
+    ]);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    const transcriptStatus = getEditingStatus(signalMap, operation.requestId, uri);
+    const isActiveRequest = String(operation.requestId || "") === String(latestRequestId || "") ||
+      snapshotRequestIds.has(String(operation.requestId || ""));
+    const status = isActiveRequest
+      ? (snapshotSignalMap.get(String(operation.requestId || "")) ||
+        snapshotSignalMap.get(`${operation.requestId || "*"}|${path.normalize(uri)}`) || "inferred")
+      : (transcriptStatus !== "inferred"
+        ? transcriptStatus
+        : (timelineSignalMap.get(String(operation.requestId || "")) || "inferred"));
+    const lines = getOperationLines(operation, getBaselineContent(state, operation.requestId, uri));
+    const detail = byFile.get(uri) || { file: uri, operations: 0, added: 0, removed: 0, statuses: [] };
+    detail.operations += 1;
+    detail.added += lines.added;
+    detail.removed += lines.removed;
+    detail.statuses.push({ status, operation: operation.type || "unknown", requestId: operation.requestId || null, epoch: operation.epoch || null, added: lines.added, removed: lines.removed });
+    byFile.set(uri, detail);
+    empty.operations += 1;
+    empty[`${status === "manual" ? "addedManual" : status === "accepted" ? "addedAccepted" : status === "rejected" ? "addedRejected" : "addedInferred"}`] += lines.added;
+    empty[`${status === "manual" ? "removedManual" : status === "accepted" ? "removedAccepted" : status === "rejected" ? "removedRejected" : "removedInferred"}`] += lines.removed;
+  }
+  empty.available = true;
+  empty.files = byFile.size;
+  empty.details = [...byFile.values()];
+  return empty;
+}
+
+async function readProjectInfo(workspaceDir) {
+  const text = await safeReadText(path.join(workspaceDir, "workspace.json"));
+  if (!text) return { project: null, projectPath: null, projectSource: "unidentified" };
+  try {
+    const metadata = JSON.parse(text);
+    const raw = metadata.folder || metadata.workspace;
+    const projectPath = decodeFileUri(raw);
+    if (!projectPath) return { project: null, projectPath: null, projectSource: "unidentified" };
+    return {
+      project: path.basename(projectPath.replace(/[\\/]$/, "")) || projectPath,
+      projectPath,
+      projectSource: metadata.folder ? "folder" : "workspace"
+    };
+  } catch {
+    return { project: null, projectPath: null, projectSource: "unidentified" };
+  }
+}
+
 async function readSessionFromDirectory(sessionDir, sessionId) {
   const mainPath = path.join(sessionDir, "main.jsonl");
   if (!(await exists(mainPath))) return null;
@@ -494,17 +757,21 @@ async function readSessionFromDirectory(sessionDir, sessionId) {
   const workspaceDir = path.resolve(sessionDir, "..", "..", "..");
   const chatSessionPath = path.join(workspaceDir, "chatSessions", `${sessionId}.jsonl`);
   const chatSessionText = await safeReadText(chatSessionPath);
+  const projectInfo = await readProjectInfo(workspaceDir);
+  const editingStateText = await safeReadText(path.join(workspaceDir, "chatEditingSessions", sessionId, "state.json"));
+  const editing = summarizeEditingOperations(editingStateText, buildEditingSignalMap(chatSessionText));
   const titleFromChatSession = extractTitleFromChatSessionText(chatSessionText);
 
   const primary = analyzeSession(sessionId, allRows, priceMap, sessionTitle || titleFromChatSession);
-  if (primary.modelTurns > 0) return primary;
+  const enriched = { ...primary, ...projectInfo, editing };
+  if (primary.modelTurns > 0) return enriched;
 
-  if (!chatSessionText) return primary;
+  if (!chatSessionText) return enriched;
 
   const fallbackTurns = extractChatSessionTurns(chatSessionText);
-  if (!fallbackTurns.length) return primary;
+  if (!fallbackTurns.length) return enriched;
 
-  return buildSessionFromFallbackTurns(sessionId, primary, fallbackTurns, priceMap);
+  return { ...buildSessionFromFallbackTurns(sessionId, primary, fallbackTurns, priceMap), ...projectInfo, editing };
 }
 
 async function buildSessionFingerprint(sessionDir) {
@@ -538,6 +805,8 @@ async function buildSessionFingerprint(sessionDir) {
   const modelsSize = modelsStat ? Number(modelsStat.size || 0) : 0;
   const workspaceDir = path.resolve(sessionDir, "..", "..", "..");
   const chatSessionStat = await statSafe(path.join(workspaceDir, "chatSessions", `${path.basename(sessionDir)}.jsonl`));
+  const workspaceStat = await statSafe(path.join(workspaceDir, "workspace.json"));
+  const editingStat = await statSafe(path.join(workspaceDir, "chatEditingSessions", `${path.basename(sessionDir)}`, "state.json"));
 
   return [
     Number(mainStat.mtimeMs || 0),
@@ -549,6 +818,9 @@ async function buildSessionFingerprint(sessionDir) {
     titleSize,
     chatSessionStat ? Number(chatSessionStat.mtimeMs || 0) : 0,
     chatSessionStat ? Number(chatSessionStat.size || 0) : 0
+    ,workspaceStat ? Number(workspaceStat.mtimeMs || 0) : 0
+    ,editingStat ? Number(editingStat.mtimeMs || 0) : 0
+    ,editingStat ? Number(editingStat.size || 0) : 0
   ].join("|");
 }
 
@@ -895,6 +1167,8 @@ const server = http.createServer(async (req, res) => {
           const rows = sessions.map((s) => ({
             Titolo: s.title || "(non disponibile)",
             "ID Sessione": s.sessionId,
+            Progetto: s.project || "Non identificato",
+            "Percorso Progetto": s.projectPath || "",
             "Data Inizio": new Date(s.startTs || 0).toLocaleString("it-IT"),
             "Model Turns": s.modelTurns || 0,
             "Auto Turns": s.autoDiscountTurns || 0,
@@ -909,9 +1183,36 @@ const server = http.createServer(async (req, res) => {
             EUR: Number((s.aic * aicValueEuro).toFixed(4))
           }));
           const ws = xlsx.utils.json_to_sheet(rows);
-          ws["!cols"] = [ { wch: 25 }, { wch: 40 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 12 } ];
+          ws["!cols"] = [ { wch: 25 }, { wch: 40 }, { wch: 24 }, { wch: 45 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 12 } ];
           const wb = xlsx.utils.book_new();
           xlsx.utils.book_append_sheet(wb, ws, "Sessioni");
+          const projects = new Map();
+          for (const s of sessions) {
+            const key = s.project || "Non identificato";
+            const editing = s.editing || {};
+            const current = projects.get(key) || {
+              Progetto: key, Sessioni: 0, "Model Turns": 0, "Input Tokens": 0, "Output Tokens": 0,
+              AIC: 0, "Costo (EUR)": 0, "File modificati": 0, "Righe aggiunte accettate": 0,
+              "Righe rimosse accettate": 0, "Righe aggiunte rifiutate": 0, "Righe rimosse rifiutate": 0,
+              "Righe aggiunte manuali": 0, "Righe rimosse manuali": 0, "Righe non classificate": 0
+            };
+            current.Sessioni += 1;
+            current["Model Turns"] += s.modelTurns || 0;
+            current["Input Tokens"] += s.inputTokens || 0;
+            current["Output Tokens"] += s.outputTokens || 0;
+            current.AIC += s.aic || 0;
+            current["Costo (EUR)"] += (s.aic || 0) * aicValueEuro;
+            current["File modificati"] += editing.files || 0;
+            current["Righe aggiunte accettate"] += editing.addedAccepted || 0;
+            current["Righe rimosse accettate"] += editing.removedAccepted || 0;
+            current["Righe aggiunte rifiutate"] += editing.addedRejected || 0;
+            current["Righe rimosse rifiutate"] += editing.removedRejected || 0;
+            current["Righe aggiunte manuali"] += editing.addedManual || 0;
+            current["Righe rimosse manuali"] += editing.removedManual || 0;
+            current["Righe non classificate"] += (editing.addedInferred || 0) + (editing.removedInferred || 0);
+            projects.set(key, current);
+          }
+          xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet([...projects.values()]), "Progetti");
           const excelBuffer = xlsx.write(wb, { bookType: "xlsx", type: "buffer" });
           res.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": "attachment; filename=copilot-sessions.xlsx", "Content-Length": excelBuffer.length });
           res.end(excelBuffer);

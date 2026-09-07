@@ -592,6 +592,12 @@
                 <option value="month">Mese</option>
               </select>
             </div>
+            <div class="field">
+              <label for="projectFilter">Progetto</label>
+              <select id="projectFilter">
+                <option value="*">Tutti i progetti</option>
+              </select>
+            </div>
             <button id="applyFilters" class="btn" type="button">Applica filtri</button>
           </div>
         </div>
@@ -620,7 +626,28 @@
       <table>
         <thead>
           <tr>
+            <th>Progetto</th>
+            <th class="num">Sessioni</th>
+            <th class="num">Token</th>
+            <th class="num">AIC</th>
+            <th class="num">File</th>
+            <th class="num">+ accettate</th>
+            <th class="num">- accettate</th>
+            <th class="num">+ rifiutate</th>
+            <th class="num">- rifiutate</th>
+            <th class="num">Righe non classificate</th>
+          </tr>
+        </thead>
+        <tbody id="projectsBody"></tbody>
+      </table>
+    </section>
+
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
             <th>Sessione</th>
+            <th>Progetto</th>
             <th>Inizio</th>
             <th class="num">Model Turns</th>
             <th class="num">Tool Calls</th>
@@ -669,12 +696,28 @@
           <tbody id="detailModelsBody"></tbody>
         </table>
       </div>
+      <div class="table-wrap">
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Stato</th>
+              <th>Operazione</th>
+              <th class="num">+ righe</th>
+              <th class="num">- righe</th>
+              <th>Request / epoch</th>
+            </tr>
+          </thead>
+          <tbody id="detailEditingBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
   <script>
     const state = {
       sessions: [],
+      projectFilter: "*",
       selectedRootPath: "",
       activePreset: "day"
     };
@@ -683,6 +726,8 @@
     const trendEl = document.getElementById("trend");
     const modelsEl = document.getElementById("models");
     const sessionsBodyEl = document.getElementById("sessionsBody");
+    const projectsBodyEl = document.getElementById("projectsBody");
+    const projectFilterEl = document.getElementById("projectFilter");
     const loadedCountEl = document.getElementById("loadedCount");
     const statusEl = document.getElementById("status");
     const configPanelEl = document.getElementById("configPanel");
@@ -693,6 +738,7 @@
     const detailSubtitleEl = document.getElementById("detailSubtitle");
     const detailKpisEl = document.getElementById("detailKpis");
     const detailModelsBodyEl = document.getElementById("detailModelsBody");
+    const detailEditingBodyEl = document.getElementById("detailEditingBody");
 
     const rootPathEl = document.getElementById("rootPath");
     const fromDateEl = document.getElementById("fromDate");
@@ -802,7 +848,54 @@
 
     function filteredSessions() {
       const { fromTs, toTs } = getActiveRange();
+      return state.sessions.filter((s) => Number.isFinite(s.startTs) && s.startTs >= fromTs && s.startTs <= toTs &&
+        (state.projectFilter === "*" || (s.project || "Non identificato") === state.projectFilter));
+    }
+
+    function sessionsInRange() {
+      const { fromTs, toTs } = getActiveRange();
       return state.sessions.filter((s) => Number.isFinite(s.startTs) && s.startTs >= fromTs && s.startTs <= toTs);
+    }
+
+    function aggregateProjects(sessions, aicValueEuro) {
+      const agg = new Map();
+      for (const s of sessions) {
+        const key = s.project || "Non identificato";
+        const e = s.editing || {};
+        const cur = agg.get(key) || { project: key, sessions: 0, tokens: 0, aic: 0, euro: 0, files: 0, addedAccepted: 0, removedAccepted: 0, addedRejected: 0, removedRejected: 0, inferred: 0 };
+        cur.sessions += 1;
+        cur.tokens += s.totalTokens || 0;
+        cur.aic += s.aic || 0;
+        cur.files += e.files || 0;
+        cur.addedAccepted += e.addedAccepted || 0;
+        cur.removedAccepted += e.removedAccepted || 0;
+        cur.addedRejected += e.addedRejected || 0;
+        cur.removedRejected += e.removedRejected || 0;
+        cur.inferred += (e.addedInferred || 0) + (e.removedInferred || 0);
+        agg.set(key, cur);
+      }
+      return [...agg.values()].map((row) => ({ ...row, euro: row.aic * aicValueEuro })).sort((a, b) => b.aic - a.aic);
+    }
+
+    function updateProjectFilter(sessions) {
+      const projects = [...new Set(sessions.map((s) => s.project || "Non identificato"))].sort();
+      const current = state.projectFilter;
+      projectFilterEl.innerHTML = `<option value="*">Tutti i progetti</option>` +
+        projects.map((project) => `<option value="${project}">${project}</option>`).join("");
+      state.projectFilter = projects.includes(current) || current === "*" ? current : "*";
+      projectFilterEl.value = state.projectFilter;
+    }
+
+    function renderProjects(sessions, aicValueEuro) {
+      const rows = aggregateProjects(sessions, aicValueEuro);
+      projectsBodyEl.innerHTML = rows.length ? rows.map((r) => `
+        <tr data-project="${r.project}" style="cursor:pointer">
+          <td>${r.project}</td><td class="num">${fmtInt(r.sessions)}</td><td class="num">${fmtInt(r.tokens)}</td>
+          <td class="num">${fmtNum(r.aic, 4)}</td><td class="num">${fmtInt(r.files)}</td>
+          <td class="num">${fmtInt(r.addedAccepted)}</td><td class="num">${fmtInt(r.removedAccepted)}</td>
+          <td class="num">${fmtInt(r.addedRejected)}</td><td class="num">${fmtInt(r.removedRejected)}</td>
+          <td class="num">${fmtInt(r.inferred)}</td>
+        </tr>`).join("") : `<tr><td colspan="10">Nessun progetto nel range selezionato.</td></tr>`;
     }
 
     function aggregateTotals(sessions, aicValueEuro) {
@@ -963,7 +1056,7 @@
 
     function renderTable(sessions, aicValueEuro) {
       if (!sessions.length) {
-        sessionsBodyEl.innerHTML = `<tr><td colspan="12">Nessuna sessione nel range selezionato.</td></tr>`;
+        sessionsBodyEl.innerHTML = `<tr><td colspan="13">Nessuna sessione nel range selezionato.</td></tr>`;
         return;
       }
 
@@ -979,6 +1072,7 @@
                 <div class="session-id mono">${s.sessionId}</div>
               </div>
             </td>
+            <td>${s.project || "Non identificato"}${s.projectSource === "unidentified" ? " (inferito)" : ""}</td>
             <td>${fmtDate(s.startTs)}</td>
             <td class="num">${fmtInt(s.modelTurns)}</td>
             <td class="num">${fmtInt(s.toolCalls)}</td>
@@ -1002,9 +1096,10 @@
       const inputNonCachedTokens = Math.max(0, (session.inputTokens || 0) - (session.cachedTokens || 0));
       const autoTurns = session.autoDiscountTurns || 0;
       const autoDiscountAmount = session.autoDiscountAmount || 0;
+      const editing = session.editing || {};
 
       detailTitleEl.textContent = title;
-      detailSubtitleEl.textContent = `${session.sessionId} · ${fmtDate(session.startTs)}`;
+      detailSubtitleEl.textContent = `${session.sessionId} · ${fmtDate(session.startTs)} · ${session.project || "Non identificato"}`;
 
       detailKpisEl.innerHTML = `
         <section class="detail-group">
@@ -1030,6 +1125,15 @@
             <div class="kv"><div class="k">Costo (€)</div><div class="v">${fmtEuro(euro)}</div></div>
           </div>
         </section>
+        <section class="detail-group">
+          <div class="detail-group-title">Modifiche codice${editing.available ? "" : " (non disponibili)"}</div>
+          <div class="kv-grid">
+            <div class="kv"><div class="k">File / operazioni</div><div class="v">${fmtInt(editing.files)} / ${fmtInt(editing.operations)}</div></div>
+            <div class="kv"><div class="k">Righe accettate (+/-)</div><div class="v">${fmtInt(editing.addedAccepted)} / ${fmtInt(editing.removedAccepted)}</div></div>
+            <div class="kv"><div class="k">Righe rifiutate (+/-)</div><div class="v">${fmtInt(editing.addedRejected)} / ${fmtInt(editing.removedRejected)}</div></div>
+            <div class="kv"><div class="k">Righe manuali / non classificate</div><div class="v">${fmtInt(editing.addedManual + editing.removedManual)} / ${fmtInt(editing.addedInferred + editing.removedInferred)}</div></div>
+          </div>
+        </section>
       `;
 
       const modelRows = Array.isArray(session.modelAgg) ? session.modelAgg : [];
@@ -1045,6 +1149,13 @@
           </tr>
         `).join("");
       }
+      const details = Array.isArray(editing.details) ? editing.details : [];
+      detailEditingBodyEl.innerHTML = details.length
+        ? details.flatMap((file) => file.statuses.map((change) => `
+          <tr><td class="mono">${file.file}</td><td>${change.status === "inferred" ? "Non classificata (fallback)" : change.status}</td>
+          <td>${change.operation}</td><td class="num">${fmtInt(change.added)}</td><td class="num">${fmtInt(change.removed)}</td>
+          <td class="mono">${change.requestId || "-"} / ${change.epoch ?? "-"}</td></tr>`)).join("")
+        : `<tr><td colspan="6">Nessuna modifica codice disponibile.</td></tr>`;
 
       detailModalEl.classList.remove("hidden");
     }
@@ -1115,6 +1226,7 @@
 
     function render() {
       const aicValueEuro = Number(aicValueEl.value || 0.01);
+      updateProjectFilter(sessionsInRange());
       const sessions = filteredSessions();
       const totals = aggregateTotals(sessions, aicValueEuro);
 
@@ -1140,6 +1252,7 @@
       );
 
       renderTable(sessions, aicValueEuro);
+      renderProjects(sessionsInRange(), aicValueEuro);
 
       const missing = totals.missingPriceTurns;
       if (!state.selectedRootPath) {
@@ -1247,6 +1360,7 @@
     document.getElementById("exportExcel").addEventListener("click", exportToExcel);
     refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
     document.getElementById("applyFilters").addEventListener("click", render);
+    projectFilterEl.addEventListener("change", () => { state.projectFilter = projectFilterEl.value; render(); });
     aicValueEl.addEventListener("change", render);
     autoRefreshEnabledEl.addEventListener("change", startAutoRefresh);
     refreshIntervalEl.addEventListener("change", startAutoRefresh);
@@ -1270,6 +1384,14 @@
       openSessionDetail(session, aicValueEuro);
     });
 
+    projectsBodyEl.addEventListener("click", (event) => {
+      const row = event.target.closest("tr[data-project]");
+      if (!row) return;
+      state.projectFilter = row.dataset.project;
+      projectFilterEl.value = state.projectFilter;
+      render();
+    });
+
     presetButtons.day.addEventListener("click", () => { setPreset("day"); render(); });
     presetButtons.month.addEventListener("click", () => { setPreset("month"); render(); });
     presetButtons.last7.addEventListener("click", () => { setPreset("last7"); render(); });
@@ -1281,4 +1403,3 @@
   </script>
 </body>
 </html>
-
