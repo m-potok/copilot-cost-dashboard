@@ -198,6 +198,9 @@ function extractChatSessionTurns(chatSessionText) {
 function extractTitleFromChatSessionText(chatSessionText) {
   if (!chatSessionText) return null;
 
+  let latestCustomTitle = null;
+  let fallbackTitle = null;
+
   for (const rawLine of chatSessionText.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -209,19 +212,31 @@ function extractTitleFromChatSessionText(chatSessionText) {
       continue;
     }
 
-    if (!row || row.kind !== 0 || !row.v) continue;
+    if (!row) continue;
+
+    if (row.kind === 1 && Array.isArray(row.k) && row.k.includes("customTitle")) {
+      const customTitle = String(row.v || "").trim();
+      if (customTitle) latestCustomTitle = customTitle;
+      continue;
+    }
+
+    if (row.kind !== 0 || !row.v) continue;
 
     const customTitle = String(row.v.customTitle || "").trim();
-    if (customTitle) return customTitle;
+    if (customTitle) latestCustomTitle = customTitle;
 
     const requests = Array.isArray(row.v.requests) ? row.v.requests : [];
+    if (fallbackTitle) continue;
     for (const req of requests) {
       const messageText = String(req && req.message && req.message.text || "").trim();
-      if (messageText) return messageText.slice(0, 120);
+      if (messageText) {
+        fallbackTitle = messageText.slice(0, 120);
+        break;
+      }
     }
   }
 
-  return null;
+  return latestCustomTitle || fallbackTitle;
 }
 
 function buildSessionFromFallbackTurns(sessionId, baseSummary, turns, priceMap) {
@@ -521,6 +536,8 @@ async function buildSessionFingerprint(sessionDir) {
 
   const modelsMtime = modelsStat ? Number(modelsStat.mtimeMs || 0) : 0;
   const modelsSize = modelsStat ? Number(modelsStat.size || 0) : 0;
+  const workspaceDir = path.resolve(sessionDir, "..", "..", "..");
+  const chatSessionStat = await statSafe(path.join(workspaceDir, "chatSessions", `${path.basename(sessionDir)}.jsonl`));
 
   return [
     Number(mainStat.mtimeMs || 0),
@@ -529,7 +546,9 @@ async function buildSessionFingerprint(sessionDir) {
     modelsSize,
     titleCount,
     titleMtime,
-    titleSize
+    titleSize,
+    chatSessionStat ? Number(chatSessionStat.mtimeMs || 0) : 0,
+    chatSessionStat ? Number(chatSessionStat.size || 0) : 0
   ].join("|");
 }
 
