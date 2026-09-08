@@ -8,6 +8,12 @@
 
   global.dashboardApi = {
     getDefaultRoot: () => requestJson("/api/default-root"),
+    getPreferences: () => requestJson("/api/preferences"),
+    savePreferences: (preferences) => requestJson("/api/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(preferences)
+    }),
     pickRoot: () => requestJson("/api/pick-root", { method: "POST" }),
     getSessions: (root, signal) =>
       requestJson(`/api/sessions?root=${encodeURIComponent(root)}`, { signal }),

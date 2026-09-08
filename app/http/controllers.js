@@ -44,7 +44,7 @@ function pickDirectoryNative() {
   });
 }
 
-function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessionRepository, syncService, xlsx, getDefaultRoot, closeDatabases }) {
+function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessionRepository, syncService, xlsx, getDefaultRoot, preferencesStore, closeDatabases }) {
   function registerRoot(root) {
     if (!root || !syncService) return null;
     return syncService.registerRoot(root);
@@ -52,6 +52,39 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessi
 
   function statusFor(root) {
     return syncService ? syncService.getStatus(root) : null;
+  }
+
+  function validatePreferences(payload) {
+    const preferences = payload && typeof payload === "object" ? payload : {};
+    const allowed = preferencesStore.DEFAULT_PREFERENCES;
+    const result = { ...allowed };
+    const stringFields = ["rootPath", "autoRefreshEnabled", "refreshInterval", "fromDate", "toDate", "groupBy", "projectFilter", "activePreset"];
+    for (const field of stringFields) {
+      if (preferences[field] !== undefined && typeof preferences[field] === "string" && preferences[field].length <= 1024) {
+        result[field] = preferences[field];
+      }
+    }
+    if (preferences.aicValueEuro !== undefined && Number.isFinite(Number(preferences.aicValueEuro)) && Number(preferences.aicValueEuro) >= 0) {
+      result.aicValueEuro = Number(preferences.aicValueEuro);
+    }
+    for (const field of ["configPanelOpen", "filtersPanelOpen"]) {
+      if (preferences[field] !== undefined && typeof preferences[field] === "boolean") result[field] = preferences[field];
+    }
+    if (preferences.sort && typeof preferences.sort === "object") {
+      for (const table of ["projects", "sessions"]) {
+        const sort = preferences.sort[table];
+        if (!sort || typeof sort !== "object") continue;
+        const defaultSort = allowed.sort[table];
+        if (typeof sort.key === "string" && sort.key.length <= 64 &&
+            (sort.direction === "asc" || sort.direction === "desc") &&
+            typeof sort.isDefault === "boolean") {
+          result.sort = { ...result.sort, [table]: { key: sort.key, direction: sort.direction, isDefault: sort.isDefault } };
+        } else {
+          result.sort = { ...result.sort, [table]: defaultSort };
+        }
+      }
+    }
+    return result;
   }
 
   return {
@@ -110,6 +143,23 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessi
         sendJson(res, 200, { root: root || null, result, status: statusFor(root || null), requestId: context.requestId });
       } catch (error) {
         sendJson(res, 400, { error: error.message || "Errore sincronizzazione.", requestId: context.requestId });
+      }
+    },
+
+    preferences(_req, res, context, body) {
+      try {
+        if (_req.method === "GET") {
+          sendJson(res, 200, { preferences: preferencesStore.readPreferences(), requestId: context.requestId });
+          return;
+        }
+        if (_req.method !== "PUT") {
+          sendJson(res, 405, { error: "Method not allowed", requestId: context.requestId });
+          return;
+        }
+        const preferences = preferencesStore.savePreferences(validatePreferences(body));
+        sendJson(res, 200, { preferences, requestId: context.requestId });
+      } catch (error) {
+        sendJson(res, 500, { error: error.message || "Errore salvataggio preferenze.", requestId: context.requestId });
       }
     },
 

@@ -35,6 +35,7 @@ function createRouter({ controllers, host, port, onFirstRequest }) {
   const routes = new Map([
     ["/api/health", "health"],
     ["/api/default-root", "defaultRoot"],
+    ["/api/preferences", "preferences"],
     ["/api/pick-root", "pickRoot"],
     ["/api/sessions", "sessions"],
     ["/api/sessions-delta", "sessionsDelta"],
@@ -67,8 +68,15 @@ function createRouter({ controllers, host, port, onFirstRequest }) {
         sendJson(res, 404, { error: "Not found", requestId });
         return;
       }
-      if (["exportExcel", "syncInterval", "syncNow"].includes(controllerName)) {
-        if (req.method !== "POST") {
+      if (["exportExcel", "syncInterval", "syncNow", "preferences"].includes(controllerName)) {
+        if (controllerName === "exportExcel" && req.method !== "POST") {
+          sendJson(res, 405, { error: "Method not allowed", requestId });
+          return;
+        }
+        if (controllerName === "preferences" && req.method === "GET") {
+          return controllers[controllerName](req, res, context);
+        }
+        if (controllerName === "preferences" && req.method !== "PUT") {
           sendJson(res, 405, { error: "Method not allowed", requestId });
           return;
         }
