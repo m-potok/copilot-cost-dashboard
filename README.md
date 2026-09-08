@@ -11,7 +11,7 @@ Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
 
 ### 1. Requisiti
 
-- **Node.js** (versione 20, 22, 23 o 24): [Scarica da nodejs.org](https://nodejs.org/)
+- **Node.js** (versione 24): [Scarica da nodejs.org](https://nodejs.org/)
   - Durante l'installazione, assicurati di spuntare "Add to PATH"
 
 ### 2. Avvio
@@ -229,6 +229,10 @@ Lo script:
 1. Installa le dipendenze bloccate dal lockfile (`npm ci`)
 2. Compila l'eseguibile
 3. Salva il file in `dist\copilot-cost-dashboard.exe`
+
+L'EXE usa Node 24 internamente, quindi non serve installare Node.js sul computer
+che lo esegue. `better-sqlite3` viene installato per lo stesso runtime Node 24,
+evitando incompatibilita tra ABI native.
 
 ### Avvio EXE
 
