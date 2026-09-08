@@ -141,7 +141,12 @@ I prezzi sono letti da `models.json` dentro ogni sessione debug-logs.
 ```
 app/
   copilot-cost-dashboard.html        # Dashboard (frontend)
-  copilot-cost-dashboard-server.js   # Server Node.js (backend)
+  copilot-cost-dashboard-server.js   # Public entry point and compatibility exports
+  bootstrap.js                       # Application composition and server startup
+  domain/                             # Session, pricing, and editing metrics
+  adapters/                           # VS Code and Copilot App session readers
+  infrastructure/                    # Filesystem, SQLite, discovery, and Excel adapters
+  http/                               # Request router and HTTP controllers
 scripts/
   build-standalone.bat               # Build EXE (wrapper)
   build-standalone.ps1               # Build EXE (PowerShell)
