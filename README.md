@@ -28,10 +28,13 @@ Poi apri nel browser: **http://127.0.0.1:4781**
 ## Uso
 
 ### Default automatico
-Alla prima apertura, il tracker carica automaticamente:
+Alla prima apertura, il tracker carica automaticamente i dati da:
 ```
-%AppData%\Roaming\Code\User\workspaceStorage
+%USERPROFILE%\AppData\Roaming\Code\User\workspaceStorage
+%USERPROFILE%\.copilot\session-state
 ```
+
+Sono supportate sia le sessioni Copilot Chat di VS Code (`debug-logs`) sia le sessioni create dalla GitHub Copilot App su Windows (`events.jsonl`). Per le sessioni della Copilot App i token e l'AIC vengono letti dalle metriche persistite nella sessione; se la sessione è ancora attiva, i dati disponibili possono essere parziali.
 
 ### Cambiare percorso
 1. Modifica il campo **"Root logs (modificabile)"** in alto
@@ -139,10 +142,11 @@ README.md                            # Questo file
 - Verifica che il percorso root esista
 - Tipicamente: `C:\Users\<username>\AppData\Roaming\Code\User\workspaceStorage`
 - Se non esiste, esegui almeno una sessione Copilot Chat per crearla
+- Per la GitHub Copilot App verifica anche `C:\Users\<username>\.copilot\session-state`
 
 ### "Sessioni caricate: 0"
 - Controlla che in workspaceStorage esistano sessioni di Copilot Chat completate
-- Il tracker cerca folder `<workspaceId>/GitHub.copilot-chat/debug-logs`
+- Il tracker cerca folder `<workspaceId>/GitHub.copilot-chat/debug-logs` e `<sessionId>/events.jsonl` sotto `.copilot\session-state`
 
 ## Condivisione
 

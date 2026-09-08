@@ -5,6 +5,7 @@ const os = require("os");
 const { spawn } = require("child_process");
 const { URL } = require("url");
 const xlsx = require("xlsx");
+const Database = require("better-sqlite3");
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
@@ -12,6 +13,7 @@ const AUTO_AIC_DISCOUNT_FACTOR = 0.9;
 const BASE_DIR = __dirname;
 const DASHBOARD_FILE = path.join(BASE_DIR, "copilot-cost-dashboard.html");
 const rootCaches = new Map();
+const copilotDbHandles = new Map();
 let hasLoggedFirstRequest = false;
 
 function color(text, code) {
@@ -32,7 +34,7 @@ function logTitle(text) {
 }
 
 function getDefaultRoot() {
-  return path.join(os.homedir(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return os.homedir();
 }
 
 async function exists(targetPath) {
@@ -824,6 +826,172 @@ async function buildSessionFingerprint(sessionDir) {
   ].join("|");
 }
 
+function isoToTs(value) {
+  const ts = Date.parse(String(value || ""));
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function getLatestEvent(rows, type) {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (rows[index] && rows[index].type === type) return rows[index];
+  }
+  return null;
+}
+
+function getMessageText(content) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => typeof part === "string" ? part : String(part && (part.text || part.content) || ""))
+    .join("")
+    .trim();
+}
+
+function getTokenDetail(tokenDetails, key) {
+  const detail = tokenDetails && tokenDetails[key];
+  return Number(detail && (detail.tokenCount ?? detail.count) || 0);
+}
+
+function extractWorkspaceName(workspaceText) {
+  if (!workspaceText) return null;
+  const match = workspaceText.match(/^\s*name:\s*(.+?)\s*$/m);
+  if (!match) return null;
+  return match[1].replace(/^["']|["']$/g, "").trim() || null;
+}
+
+function readCopilotStoreUsage(sessionId) {
+  const dbPath = path.join(os.homedir(), ".copilot", "session-store.db");
+  try {
+    let db = copilotDbHandles.get(dbPath);
+    if (!db) {
+      db = new Database(dbPath, { readonly: true, fileMustExist: true });
+      copilotDbHandles.set(dbPath, db);
+    }
+
+    const rows = db.prepare(`
+      SELECT model,
+             COUNT(*) AS turns,
+             COALESCE(SUM(input_tokens), 0) AS input_tokens,
+             COALESCE(SUM(output_tokens), 0) AS output_tokens,
+             COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+             COALESCE(SUM(total_nano_aiu), 0) AS total_nano_aiu
+      FROM assistant_usage_events
+      WHERE session_id = ?
+      GROUP BY model
+    `).all(sessionId);
+    if (!rows.length) return null;
+
+    return rows.reduce((result, row) => {
+      result.inputTokens += Number(row.input_tokens || 0);
+      result.outputTokens += Number(row.output_tokens || 0);
+      result.cachedTokens += Number(row.cache_read_tokens || 0);
+      result.aic += Number(row.total_nano_aiu || 0) / 1000000000;
+      result.modelAgg.push({
+        model: String(row.model || "unknown"),
+        turns: Number(row.turns || 0),
+        aic: Number(row.total_nano_aiu || 0) / 1000000000
+      });
+      return result;
+    }, { inputTokens: 0, outputTokens: 0, cachedTokens: 0, aic: 0, modelAgg: [] });
+  } catch {
+    return null;
+  }
+}
+
+function buildStateModelAgg(modelMetrics) {
+  const modelAgg = [];
+  for (const [model, metrics] of Object.entries(modelMetrics || {})) {
+    const usage = (metrics && metrics.usage) || {};
+    const aic = Number(metrics && metrics.totalNanoAiu || 0) / 1000000000;
+    const turns = Number(metrics && metrics.requests && metrics.requests.count || 0);
+    if (!model || (!turns && !aic && !usage.inputTokens && !usage.outputTokens)) continue;
+    modelAgg.push({ model, turns, aic });
+  }
+  return modelAgg.sort((a, b) => b.aic - a.aic);
+}
+
+async function readSessionFromStateDirectory(sessionDir, sessionId) {
+  const eventsText = await safeReadText(path.join(sessionDir, "events.jsonl"));
+  if (!eventsText) return null;
+
+  const rows = parseJsonl(eventsText);
+  if (!rows.length) return null;
+
+  const startEvent = rows.find((row) => row && row.type === "session.start");
+  const latestShutdown = getLatestEvent(rows, "session.shutdown");
+  const shutdownData = (latestShutdown && latestShutdown.data) || {};
+  const latestCheckpoint = getLatestEvent(rows, "session.usage_checkpoint");
+  const checkpointData = (latestCheckpoint && latestCheckpoint.data) || {};
+  const modelMetrics = shutdownData.modelMetrics || {};
+  const shutdownTokenDetails = shutdownData.tokenDetails || {};
+  const modelAgg = buildStateModelAgg(modelMetrics);
+  const usage = Object.values(modelMetrics).reduce((total, metrics) => {
+    const current = (metrics && metrics.usage) || {};
+    return {
+      inputTokens: total.inputTokens + Number(current.inputTokens || 0),
+      outputTokens: total.outputTokens + Number(current.outputTokens || 0),
+      cachedTokens: total.cachedTokens + Number(current.cacheReadTokens || 0)
+    };
+  }, { inputTokens: 0, outputTokens: 0, cachedTokens: 0 });
+  if (!usage.inputTokens && !usage.outputTokens) {
+    usage.inputTokens =
+      getTokenDetail(shutdownTokenDetails, "input") +
+      getTokenDetail(shutdownTokenDetails, "cache_read") +
+      getTokenDetail(shutdownTokenDetails, "cache_write");
+    usage.outputTokens = getTokenDetail(shutdownTokenDetails, "output");
+    usage.cachedTokens = getTokenDetail(shutdownTokenDetails, "cache_read");
+  }
+
+  const fallbackModel = String((startEvent && startEvent.data && startEvent.data.selectedModel) || "unknown");
+  const assistantMessages = rows.filter((row) => row && row.type === "assistant.message");
+  const fallbackOutput = assistantMessages.reduce((total, row) => total + Number(row.data && row.data.outputTokens || 0), 0);
+  const modelTurns = modelAgg.reduce((total, model) => total + model.turns, 0) || assistantMessages.length;
+  const fallbackInput = modelAgg.length ? 0 : 0;
+  const fallbackModels = modelAgg.length ? modelAgg : (modelTurns ? [{ model: fallbackModel, turns: modelTurns, aic: 0 }] : []);
+  const workspaceText = await safeReadText(path.join(sessionDir, "workspace.yaml"));
+  const titleRow = rows.find((row) => row && row.type === "user.message");
+  const title = extractWorkspaceName(workspaceText) ||
+    getMessageText(titleRow && titleRow.data && titleRow.data.content).slice(0, 120) || null;
+  const startTs = isoToTs(
+    (startEvent && startEvent.data && startEvent.data.startTime) ||
+    (startEvent && startEvent.timestamp) ||
+    (rows[0] && rows[0].timestamp)
+  );
+  const endTs = isoToTs(rows[rows.length - 1] && rows[rows.length - 1].timestamp);
+  const aic = Number(shutdownData.totalNanoAiu || checkpointData.totalNanoAiu || 0) / 1000000000;
+  const storeUsage = readCopilotStoreUsage(sessionId);
+  const resolvedUsage = storeUsage || usage;
+
+  return {
+    sessionId,
+    title,
+    startTs,
+    endTs,
+    modelTurns: storeUsage ? storeUsage.modelAgg.reduce((total, model) => total + model.turns, 0) : modelTurns,
+    toolCalls: rows.filter((row) => row && row.type === "tool.execution_start").length,
+    inputTokens: resolvedUsage.inputTokens || fallbackInput,
+    outputTokens: resolvedUsage.outputTokens || fallbackOutput,
+    cachedTokens: resolvedUsage.cachedTokens,
+    totalTokens: (resolvedUsage.inputTokens || fallbackInput) + (resolvedUsage.outputTokens || fallbackOutput),
+    errors: rows.filter((row) => row && row.type === "tool.execution_complete" && row.data && row.data.success === false).length,
+    aic,
+    missingPriceTurns: 0,
+    autoDiscountTurns: 0,
+    autoDiscountAmount: 0,
+    modelAgg: storeUsage ? storeUsage.modelAgg : fallbackModels
+  };
+}
+
+async function buildStateFingerprint(sessionDir) {
+  const eventsPath = path.join(sessionDir, "events.jsonl");
+  const stat = await statSafe(eventsPath);
+  if (!stat) return null;
+  return [
+    Number(stat.mtimeMs || 0),
+    Number(stat.size || 0)
+  ].join("|");
+}
+
 async function refreshSessionsFromRoot(rootPath) {
   const resolvedRoot = path.resolve(rootPath);
   if (!(await exists(resolvedRoot))) {
@@ -831,7 +999,14 @@ async function refreshSessionsFromRoot(rootPath) {
   }
 
   const debugDirs = await findDebugLogsDirectories(resolvedRoot);
-  if (!debugDirs.length) {
+  const rootBaseName = path.basename(resolvedRoot).toLowerCase();
+  const stateRoot = rootBaseName === "session-state"
+    ? resolvedRoot
+    : (rootBaseName === ".copilot"
+      ? path.join(resolvedRoot, "session-state")
+      : path.join(resolvedRoot, ".copilot", "session-state"));
+  const hasStateRoot = await exists(stateRoot);
+  if (!debugDirs.length && !hasStateRoot) {
     rootCaches.set(resolvedRoot, {
       sessionsById: new Map(),
       fingerprints: new Map(),
@@ -868,15 +1043,32 @@ async function refreshSessionsFromRoot(rootPath) {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       inspectedFolders += 1;
-      discovered.set(entry.name, path.join(debugDir, entry.name));
+      discovered.set(entry.name, { kind: "debug", dir: path.join(debugDir, entry.name) });
+    }
+  }
+
+  if (hasStateRoot) {
+    let entries = [];
+    try {
+      entries = await fs.readdir(stateRoot, { withFileTypes: true });
+    } catch {
+      entries = [];
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        discovered.set(entry.name, { kind: "state", dir: path.join(stateRoot, entry.name) });
+      }
     }
   }
 
   const changed = [];
   let unchangedCount = 0;
 
-  for (const [sessionId, sessionDir] of discovered.entries()) {
-    const fingerprint = await buildSessionFingerprint(sessionDir);
+  for (const [sessionId, source] of discovered.entries()) {
+    const sessionDir = source.dir;
+    const fingerprint = source.kind === "state"
+      ? await buildStateFingerprint(sessionDir)
+      : await buildSessionFingerprint(sessionDir);
     if (!fingerprint) continue;
 
     const prevFingerprint = cache.fingerprints.get(sessionId);
@@ -885,7 +1077,9 @@ async function refreshSessionsFromRoot(rootPath) {
       continue;
     }
 
-    const analyzed = await readSessionFromDirectory(sessionDir, sessionId);
+    const analyzed = source.kind === "state"
+      ? await readSessionFromStateDirectory(sessionDir, sessionId)
+      : await readSessionFromDirectory(sessionDir, sessionId);
     if (!analyzed) {
       cache.sessionsById.delete(sessionId);
       cache.fingerprints.delete(sessionId);
@@ -929,9 +1123,22 @@ async function findDebugLogsDirectories(rootPath) {
 
   if (baseName === "debug-logs") return [resolved];
 
+  if (baseName === "session-state") return [];
+
+  if (baseName === ".copilot") return [];
+
   if (baseName === "github.copilot-chat") {
     const candidate = path.join(resolved, "debug-logs");
     if (await exists(candidate)) found.push(candidate);
+    return found;
+  }
+
+  if (baseName === path.basename(os.homedir()).toLowerCase()) {
+    const workspaceStorage = path.join(resolved, "AppData", "Roaming", "Code", "User", "workspaceStorage");
+    if (await exists(workspaceStorage)) {
+      const nested = await findDebugLogsDirectories(workspaceStorage);
+      found.push(...nested);
+    }
     return found;
   }
 
