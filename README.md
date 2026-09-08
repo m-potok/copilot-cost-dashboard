@@ -11,7 +11,7 @@ Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
 
 ### 1. Requisiti
 
-- **Node.js** (versione 14+): [Scarica da nodejs.org](https://nodejs.org/)
+- **Node.js** (versione 18+): [Scarica da nodejs.org](https://nodejs.org/)
   - Durante l'installazione, assicurati di spuntare "Add to PATH"
 
 ### 2. Avvio
@@ -24,6 +24,32 @@ node app/copilot-cost-dashboard-server.js
 ```
 
 Poi apri nel browser: **http://127.0.0.1:4781**
+
+### Test
+
+Esegui i test caratterizzanti e gli smoke test API con:
+
+```bash
+npm ci
+npm test
+```
+
+I controlli di qualita separati sono disponibili con:
+
+```bash
+npm run lint
+npm run type-check
+```
+
+Per misurare discovery e refresh incrementale sul dataset fixture:
+
+```bash
+npm run benchmark
+```
+
+Le soglie predefinite sono 1000 ms per la scansione iniziale e 1000 ms per
+il refresh. Possono essere sovrascritte con `BENCHMARK_MAX_INITIAL_MS` e
+`BENCHMARK_MAX_REFRESH_MS`.
 
 ## Uso
 
@@ -115,7 +141,12 @@ I prezzi sono letti da `models.json` dentro ogni sessione debug-logs.
 ```
 app/
   copilot-cost-dashboard.html        # Dashboard (frontend)
-  copilot-cost-dashboard-server.js   # Server Node.js (backend)
+  copilot-cost-dashboard-server.js   # Public entry point and compatibility exports
+  bootstrap.js                       # Application composition and server startup
+  domain/                             # Session, pricing, and editing metrics
+  adapters/                           # VS Code and Copilot App session readers
+  infrastructure/                    # Filesystem, SQLite, discovery, and Excel adapters
+  http/                               # Request router and HTTP controllers
 scripts/
   build-standalone.bat               # Build EXE (wrapper)
   build-standalone.ps1               # Build EXE (PowerShell)
@@ -172,7 +203,7 @@ Opzione 2 (PowerShell):
 
 Lo script:
 
-1. Installa le dipendenze di build (`pkg`)
+1. Installa le dipendenze bloccate dal lockfile (`npm ci`)
 2. Compila l'eseguibile
 3. Salva il file in `dist\copilot-cost-dashboard.exe`
 
@@ -191,6 +222,15 @@ http://127.0.0.1:4781
 ### Cosa condividere (modalita standalone)
 
 - `dist\copilot-cost-dashboard.exe`
+
+Per verificare l'integrita dell'artifact, calcola il checksum SHA-256:
+
+```powershell
+Get-FileHash .\dist\copilot-cost-dashboard.exe -Algorithm SHA256
+```
+
+La CI Windows esegue test, lint, type-check e build EXE e pubblica
+l'eseguibile come artifact.
 
 Note:
 
