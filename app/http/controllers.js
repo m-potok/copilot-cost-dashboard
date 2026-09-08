@@ -1,6 +1,6 @@
 const path = require("path");
 const { spawn } = require("child_process");
-const { exists, safeReadText } = require("../infrastructure/fs-reader");
+const { safeReadText } = require("../infrastructure/fs-reader");
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -44,7 +44,16 @@ function pickDirectoryNative() {
   });
 }
 
-function createControllers({ dashboardFile, apiClientFile, sessionCatalog, xlsx, getDefaultRoot, closeDatabases }) {
+function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessionRepository, syncService, xlsx, getDefaultRoot, closeDatabases }) {
+  function registerRoot(root) {
+    if (!root || !syncService) return null;
+    return syncService.registerRoot(root);
+  }
+
+  function statusFor(root) {
+    return syncService ? syncService.getStatus(root) : null;
+  }
+
   return {
     async dashboard(_req, res) {
       const html = await safeReadText(dashboardFile);
@@ -76,6 +85,34 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, xlsx,
       sendJson(res, 200, { root: getDefaultRoot(), requestId: context.requestId });
     },
 
+    syncStatus(req, res, context) {
+      const root = context.url.searchParams.get("root") || null;
+      sendJson(res, 200, { ...statusFor(root), requestId: context.requestId });
+    },
+
+    syncInterval(_req, res, context, body) {
+      try {
+        const payload = body || {};
+        const status = syncService.setIntervalSeconds(payload.intervalSeconds ?? payload.seconds);
+        sendJson(res, 200, { ...status, requestId: context.requestId });
+      } catch (error) {
+        sendJson(res, 400, { error: error.message, requestId: context.requestId });
+      }
+    },
+
+    async syncNow(_req, res, context, body) {
+      const root = String(body && body.root || context.url.searchParams.get("root") || "").trim();
+      try {
+        if (root) registerRoot(root);
+        const result = root
+          ? await syncService.syncRoot(root)
+          : await syncService.syncAll();
+        sendJson(res, 200, { root: root || null, result, status: statusFor(root || null), requestId: context.requestId });
+      } catch (error) {
+        sendJson(res, 400, { error: error.message || "Errore sincronizzazione.", requestId: context.requestId });
+      }
+    },
+
     async pickRoot(req, res, context) {
       if (req.method !== "POST") {
         sendJson(res, 405, { error: "Method not allowed", requestId: context.requestId });
@@ -97,8 +134,17 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, xlsx,
     async sessions(_req, res, context) {
       const root = context.url.searchParams.get("root") || getDefaultRoot();
       try {
-        const payload = await sessionCatalog.read(root);
-        sendJson(res, 200, { root: payload.root, inspectedFolders: payload.inspectedFolders, sessions: payload.sessions, requestId: context.requestId });
+        const registeredRoot = registerRoot(root);
+        const sessions = sessionRepository.getSessions(registeredRoot || root);
+        const syncStatus = statusFor(registeredRoot || root);
+        sendJson(res, 200, {
+          root: registeredRoot || path.resolve(root),
+          inspectedFolders: syncStatus && syncStatus.root ? syncStatus.root.inspectedFolders : 0,
+          sessions,
+          source: "sqlite",
+          syncStatus,
+          requestId: context.requestId
+        });
       } catch (error) {
         sendJson(res, 400, { error: error.message || "Errore lettura sessioni.", requestId: context.requestId });
       }
@@ -107,16 +153,28 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, xlsx,
     async sessionsDelta(_req, res, context) {
       const root = context.url.searchParams.get("root") || getDefaultRoot();
       try {
-        const payload = await sessionCatalog.read(root);
+        const registeredRoot = registerRoot(root);
+        const payload = sessionRepository.getDelta(registeredRoot || root) || {
+          root: registeredRoot || path.resolve(root),
+          inspectedFolders: 0,
+          changed: [],
+          removedSessionIds: [],
+          unchangedCount: 0,
+          totalSessions: 0,
+          fullRebuild: false,
+          lastSyncTs: null
+        };
         sendJson(res, 200, {
           root: payload.root,
           inspectedFolders: payload.inspectedFolders,
           changed: payload.changed,
           removedSessionIds: payload.removedSessionIds,
           unchangedCount: payload.unchangedCount,
-          totalSessions: payload.sessions.length,
+          totalSessions: payload.totalSessions,
           fullRebuild: payload.fullRebuild,
           lastSyncTs: payload.lastSyncTs,
+          source: "sqlite",
+          syncStatus: statusFor(registeredRoot || root),
           requestId: context.requestId
         });
       } catch (error) {
@@ -128,10 +186,11 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, xlsx,
       try {
         const payload = body || {};
         const root = String(payload.root || "").trim();
-        if (!root || !path.isAbsolute(root) || !(await exists(root))) {
+        if (!root || !path.isAbsolute(root)) {
           throw new Error("A valid absolute root path is required.");
         }
-        const sessions = (await sessionCatalog.read(root)).sessions;
+        registerRoot(root);
+        const sessions = sessionRepository.getSessions(root);
         const aicValueEuro = Number(payload.aicValueEuro || 0.01);
         const excelBuffer = require("../infrastructure/excel-exporter").createExcelBuffer(xlsx, sessions, aicValueEuro);
         res.writeHead(200, {

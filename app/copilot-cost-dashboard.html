@@ -14,7 +14,7 @@
       --accent: #005b99;
       --accent-2: #007a66;
       --danger: #ad1f2d;
-      --shadow: 0 14px 38px rgba(15, 31, 47, 0.1);
+      --shadow: 0 1px 2px rgba(15, 31, 47, 0.06);
       --radius: 12px;
     }
 
@@ -110,6 +110,49 @@
       margin-top: 10px;
       display: grid;
       gap: 10px;
+    }
+
+    .config-group {
+      display: grid;
+      gap: 8px;
+      padding-top: 2px;
+    }
+
+    .config-group + .config-group {
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+
+    .config-group-title {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 750;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .config-row {
+      display: grid;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .config-row.source {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .config-row.sync {
+      grid-template-columns: minmax(180px, 260px) auto;
+    }
+
+    .config-row .path {
+      min-width: 0;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .btn {
@@ -348,10 +391,12 @@
 
     .status.warn { color: var(--danger); font-weight: 700; }
 
+    .header-actions { justify-content: flex-end; }
+
     .disclaimer {
       font-size: 0.84rem;
       color: var(--muted);
-      border-left: 3px solid #f3b0b8;
+      border: 1px solid #f3d5d9;
       background: #fff7f8;
       padding: 8px 10px;
       border-radius: 6px;
@@ -550,7 +595,21 @@
 
     @media (max-width: 980px) {
       .grid2 { grid-template-columns: 1fr; }
-      .field.path { min-width: 100%; }
+    }
+
+    @media (max-width: 680px) {
+      .config-row.source,
+      .config-row.sync {
+        grid-template-columns: 1fr;
+      }
+
+      .button-group {
+        width: 100%;
+      }
+
+      .button-group .btn {
+        flex: 1 1 auto;
+      }
     }
   </style>
 </head>
@@ -560,7 +619,6 @@
       <div class="headline">
         <div>
           <h1>Copilot Session Cost Tracker</h1>
-          <p class="subtitle">Default automatico su %AppData%\Roaming\Code\User\workspaceStorage. Percorso modificabile in ogni momento.</p>
         </div>
         <span class="badge" id="loadedCount">0 sessioni caricate</span>
       </div>
@@ -568,39 +626,36 @@
       <details id="configPanel" class="config-panel">
         <summary>Configurazioni</summary>
         <div class="config-body">
-          <div class="toolbar">
-            <button id="loadDefault" class="btn primary" type="button">Carica cartella standard</button>
-            <button id="pickRoot" class="btn" type="button">Scegli cartella...</button>
-            <button id="applyPath" class="btn" type="button">Usa percorso inserito</button>
-            <button id="reloadPath" class="btn" type="button">Ricarica percorso corrente</button>
-            <button id="refreshNow" class="btn" type="button">Aggiorna ora</button>
-            <button id="exportExcel" class="btn" type="button">Export Excel</button>
+          <div class="config-group">
+            <div class="config-group-title">Sorgente dati</div>
+            <div class="config-row source">
+              <div class="field path">
+                <label for="rootPath">Cartella dei log</label>
+                <input id="rootPath" type="text" placeholder="C:\\Users\\...\\AppData\\Roaming\\Code\\User\\workspaceStorage" />
+              </div>
+              <div class="button-group">
+                <button id="pickRoot" class="btn" type="button">Scegli cartella</button>
+                <button id="applyPath" class="btn primary" type="button">Applica percorso</button>
+              </div>
+            </div>
           </div>
 
-          <div class="inputs">
-            <div class="field path" style="min-width:460px; flex:1 1 460px;">
-              <label for="rootPath">Root logs (modificabile)</label>
-              <input id="rootPath" type="text" placeholder="C:\\Users\\...\\AppData\\Roaming\\Code\\User\\workspaceStorage" />
-            </div>
+          <div class="config-group">
+            <div class="config-group-title">Calcolo costi</div>
             <div class="field">
-              <label for="aicValue">Valore 1 AIC (€)</label>
+              <label for="aicValue">Valore AIC (€)</label>
               <input id="aicValue" type="number" step="0.0001" min="0" value="0.01" />
             </div>
-            <div class="field">
-              <label for="autoRefreshEnabled">Auto refresh</label>
-              <select id="autoRefreshEnabled">
-                <option value="on" selected>Attivo</option>
-                <option value="off">Disattivo</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="refreshInterval">Intervallo refresh</label>
-              <select id="refreshInterval">
-                <option value="15">15s</option>
-                <option value="30" selected>30s</option>
-                <option value="60">60s</option>
-                <option value="120">120s</option>
-              </select>
+          </div>
+
+          <div class="config-group">
+            <div class="config-group-title">Sincronizzazione</div>
+            <div class="config-row sync">
+              <div class="field">
+                <label for="syncIntervalSeconds">Frequenza (secondi)</label>
+                <input id="syncIntervalSeconds" type="number" min="1" max="86400" step="1" value="60" />
+              </div>
+              <button id="applySyncInterval" class="btn" type="button">Applica frequenza</button>
             </div>
           </div>
         </div>
@@ -643,7 +698,13 @@
         </div>
       </details>
 
-      <div id="status" class="status">Avvio in corso...</div>
+      <div class="toolbar header-actions">
+        <button id="syncNow" class="btn" type="button">Sincronizza ora</button>
+        <button id="exportExcel" class="btn" type="button">Esporta Excel</button>
+      </div>
+
+      <div id="status" class="status hidden" aria-live="polite"></div>
+      <div id="syncStatus" class="status">Sorgente: SQLite · Sync in attesa...</div>
       <div class="disclaimer">
         Disclaimer: i valori mostrati sono indicativi e non rappresentano il costo finale effettivo di fatturazione.
       </div>
@@ -765,7 +826,8 @@
       sort: {
         projects: { key: "aic", direction: "desc", isDefault: true },
         sessions: { key: "startTs", direction: "desc", isDefault: true }
-      }
+      },
+      syncStatus: null
     };
 
     const statsEl = document.getElementById("stats");
@@ -776,6 +838,7 @@
     const projectFilterEl = document.getElementById("projectFilter");
     const loadedCountEl = document.getElementById("loadedCount");
     const statusEl = document.getElementById("status");
+    const syncStatusEl = document.getElementById("syncStatus");
     const configPanelEl = document.getElementById("configPanel");
     const loadingOverlayEl = document.getElementById("loadingOverlay");
     const loadingTextEl = document.getElementById("loadingText");
@@ -790,10 +853,8 @@
     const fromDateEl = document.getElementById("fromDate");
     const toDateEl = document.getElementById("toDate");
     const aicValueEl = document.getElementById("aicValue");
-    const autoRefreshEnabledEl = document.getElementById("autoRefreshEnabled");
-    const refreshIntervalEl = document.getElementById("refreshInterval");
     const groupByEl = document.getElementById("groupBy");
-    const refreshNowBtn = document.getElementById("refreshNow");
+    const syncIntervalSecondsEl = document.getElementById("syncIntervalSeconds");
 
     let autoRefreshTimer = null;
     let refreshInFlight = false;
@@ -808,8 +869,21 @@
     };
 
     function setStatus(text, isWarn = false) {
-      statusEl.textContent = text;
-      statusEl.className = isWarn ? "status warn" : "status";
+      const message = String(text || "").trim();
+      statusEl.textContent = message;
+      statusEl.className = message ? (isWarn ? "status warn" : "status") : "status hidden";
+    }
+
+    function showSyncStatus(status) {
+      state.syncStatus = status || null;
+      const root = status && (status.root ||
+        (Array.isArray(status.roots) ? status.roots.find((item) => item.root === state.selectedRootPath) : null));
+      const interval = status && status.intervalSeconds;
+      const rootStatus = root ? `${root.status || "registered"}${root.lastSuccessAt ? ` · ultima ${fmtDate(root.lastSuccessAt)}` : ""}` : "in attesa";
+      const error = root && root.error ? ` · errore: ${root.error}` : "";
+      syncStatusEl.textContent = `Sorgente: SQLite · Sync: ${rootStatus} · intervallo ${interval || "-"}s${error}`;
+      syncStatusEl.className = root && root.error ? "status warn" : "status";
+      if (interval) syncIntervalSecondsEl.value = interval;
     }
 
     function setLoading(loading, message = "") {
@@ -1291,15 +1365,14 @@
 
     function startAutoRefresh() {
       clearAutoRefreshTimer();
-      if (autoRefreshEnabledEl.value !== "on") return;
-      const seconds = Number(refreshIntervalEl.value || 30);
-      const intervalMs = Math.max(10, seconds) * 1000;
+      const intervalMs = 30 * 1000;
       autoRefreshTimer = setInterval(() => {
         refreshDelta({ silent: true });
       }, intervalMs);
     }
 
     function applyDeltaPayload(payload, { silent = false } = {}) {
+      showSyncStatus(payload.syncStatus);
       const changed = Array.isArray(payload.changed) ? payload.changed : [];
       const removed = new Set(Array.isArray(payload.removedSessionIds) ? payload.removedSessionIds : []);
 
@@ -1380,9 +1453,9 @@
       if (!state.selectedRootPath) {
         setStatus("Nessun percorso configurato.", true);
       } else if (missing > 0) {
-        setStatus(`Dati caricati da ${state.selectedRootPath}. Attenzione: ${missing} turn senza pricing in models.json.`, true);
+        setStatus(`Attenzione: ${missing} turn senza pricing in models.json.`, true);
       } else {
-        setStatus(`Dati caricati da ${state.selectedRootPath}. Sessioni nel range: ${sessions.length}.`);
+        setStatus("");
       }
     }
 
@@ -1399,11 +1472,11 @@
       try {
         const payload = await dashboardApi.getSessions(root, loadAbortController.signal);
         state.sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+        showSyncStatus(payload.syncStatus);
         state.selectedRootPath = payload.root || root;
         rootPathEl.value = state.selectedRootPath;
         render();
         configPanelEl.open = false;
-        setStatus(`Dati caricati da ${state.selectedRootPath}. Sessioni disponibili: ${state.sessions.length}.`);
         startAutoRefresh();
       } catch (error) {
         if (error.name !== "AbortError") setStatus(`Errore caricamento: ${error.message}`, true);
@@ -1432,10 +1505,41 @@
           setStatus("Selezione cartella annullata.");
           return;
         }
+
         rootPathEl.value = payload.path;
         await loadFromPath(payload.path);
       } catch (error) {
         setStatus(`Errore folder picker: ${error.message}`, true);
+      }
+    }
+
+    async function syncSelectedRoot() {
+      const root = String(state.selectedRootPath || rootPathEl.value || "").trim();
+      if (!root) {
+        setStatus("Percorso root vuoto.", true);
+        return;
+      }
+      setLoading(true, "Sincronizzazione filesystem in corso...");
+      try {
+        const payload = await dashboardApi.syncNow(root);
+        showSyncStatus(payload.status);
+        await loadFromPath(root);
+        setStatus("");
+      } catch (error) {
+        setStatus(`Errore sincronizzazione: ${error.message}`, true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function applySyncInterval() {
+      const seconds = Number(syncIntervalSecondsEl.value);
+      try {
+        const payload = await dashboardApi.updateSyncInterval(seconds);
+        showSyncStatus(payload);
+        setStatus(`Intervallo sincronizzazione impostato a ${payload.intervalSeconds}s.`);
+      } catch (error) {
+        setStatus(`Intervallo non valido: ${error.message}`, true);
       }
     }
 
@@ -1467,17 +1571,14 @@
       }
     }
 
-    document.getElementById("loadDefault").addEventListener("click", loadDefaultPath);
     document.getElementById("pickRoot").addEventListener("click", pickRootPath);
     document.getElementById("applyPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
-    document.getElementById("reloadPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
     document.getElementById("exportExcel").addEventListener("click", exportToExcel);
-    refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
+    document.getElementById("syncNow").addEventListener("click", syncSelectedRoot);
+    document.getElementById("applySyncInterval").addEventListener("click", applySyncInterval);
     document.getElementById("applyFilters").addEventListener("click", render);
     projectFilterEl.addEventListener("change", () => { state.projectFilter = projectFilterEl.value; render(); });
     aicValueEl.addEventListener("change", render);
-    autoRefreshEnabledEl.addEventListener("change", startAutoRefresh);
-    refreshIntervalEl.addEventListener("change", startAutoRefresh);
     groupByEl.addEventListener("change", render);
     document.getElementById("closeDetail").addEventListener("click", closeSessionDetail);
 

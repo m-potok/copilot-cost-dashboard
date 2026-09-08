@@ -5,8 +5,10 @@ const { spawn } = require("child_process");
 const xlsx = require("xlsx");
 const { createControllers } = require("./http/controllers");
 const { createRouter } = require("./http/router");
-const { sessionCatalog } = require("./infrastructure/session-discovery");
+const { sessionCatalog, setSessionReadObserver } = require("./infrastructure/session-discovery");
 const { closeCopilotDatabases } = require("./adapters/copilot-app/store");
+const { SqliteSessionRepository } = require("./infrastructure/sqlite-session-repository");
+const { SessionSyncService } = require("./application/session-sync-service");
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
@@ -24,6 +26,11 @@ function logSuccess(text) { console.log(color(text, "92")); }
 function logTitle(text) { console.log(color(text, "97;1")); }
 function getDefaultRoot() { return os.homedir(); }
 
+const sessionRepository = new SqliteSessionRepository();
+const syncService = new SessionSyncService({ repository: sessionRepository });
+syncService.registerRoot(getDefaultRoot());
+setSessionReadObserver((result) => sessionRepository.saveSyncResult(result.root, result));
+
 function openBrowser(url) {
   try {
     const command = process.platform === "win32" ? "cmd" : process.platform === "darwin" ? "open" : "xdg-open";
@@ -36,14 +43,16 @@ function openBrowser(url) {
   }
 }
 
-function createServer() {
+function createServer({ repository = sessionRepository, sync = syncService } = {}) {
   const controllers = createControllers({
     dashboardFile: DASHBOARD_FILE,
     apiClientFile: API_CLIENT_FILE,
     sessionCatalog,
+    sessionRepository: repository,
+    syncService: sync,
     xlsx,
     getDefaultRoot,
-    closeDatabases: closeCopilotDatabases
+    closeDatabases
   });
   const router = createRouter({
     controllers,
@@ -59,8 +68,11 @@ function createServer() {
 }
 
 const server = createServer();
+server.on("close", closeDatabases);
+syncService.start();
 
 function startServer() {
+  syncService.start();
   server.listen(PORT, HOST, () => {
     const dashboardUrl = `http://${HOST}:${PORT}`;
     logTitle("============================================================");
@@ -79,4 +91,19 @@ function startServer() {
   });
 }
 
-module.exports = { HOST, PORT, server, sessionCatalog, closeCopilotDatabases, startServer, createServer };
+function closeDatabases() {
+  syncService.close();
+  closeCopilotDatabases();
+}
+
+module.exports = {
+  HOST,
+  PORT,
+  server,
+  sessionCatalog,
+  sessionRepository,
+  syncService,
+  closeCopilotDatabases: closeDatabases,
+  startServer,
+  createServer
+};
