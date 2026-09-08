@@ -7,6 +7,7 @@ const { createControllers } = require("./http/controllers");
 const { createRouter } = require("./http/router");
 const { sessionCatalog } = require("./infrastructure/session-discovery");
 const { closeCopilotDatabases } = require("./adapters/copilot-app/store");
+const preferencesStore = require("./infrastructure/preferences-store");
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
@@ -43,7 +44,11 @@ function createServer() {
     sessionCatalog,
     xlsx,
     getDefaultRoot,
-    closeDatabases: closeCopilotDatabases
+    preferencesStore,
+    closeDatabases() {
+      closeCopilotDatabases();
+      preferencesStore.closePreferencesDatabase();
+    }
   });
   const router = createRouter({
     controllers,

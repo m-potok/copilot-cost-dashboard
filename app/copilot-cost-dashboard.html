@@ -768,6 +768,61 @@
       }
     };
 
+    function currentPreferences() {
+      return {
+        rootPath: rootPathEl.value.trim(),
+        aicValueEuro: Number(aicValueEl.value || 0.01),
+        autoRefreshEnabled: autoRefreshEnabledEl.value,
+        refreshInterval: refreshIntervalEl.value,
+        fromDate: fromDateEl.value,
+        toDate: toDateEl.value,
+        groupBy: groupByEl.value,
+        projectFilter: state.projectFilter,
+        activePreset: state.activePreset,
+        sort: state.sort,
+        configPanelOpen: configPanelEl.open,
+        filtersPanelOpen: document.getElementById("filtersPanel").open
+      };
+    }
+
+    function savePreferences() {
+      if (!preferencesReady) return;
+      clearTimeout(preferencesSaveTimer);
+      preferencesSaveTimer = setTimeout(async () => {
+        try {
+          await dashboardApi.savePreferences(currentPreferences());
+        } catch (error) {
+          setStatus(`Errore salvataggio preferenze: ${error.message}`, true);
+        }
+      }, 250);
+    }
+
+    function applyPreferences(preferences) {
+      if (!preferences || typeof preferences !== "object") return;
+      rootPathEl.value = typeof preferences.rootPath === "string" ? preferences.rootPath : "";
+      aicValueEl.value = Number.isFinite(Number(preferences.aicValueEuro)) ? preferences.aicValueEuro : 0.01;
+      autoRefreshEnabledEl.value = preferences.autoRefreshEnabled === "off" ? "off" : "on";
+      refreshIntervalEl.value = ["15", "30", "60", "120"].includes(preferences.refreshInterval) ? preferences.refreshInterval : "30";
+      groupByEl.value = preferences.groupBy === "month" ? "month" : "day";
+      state.projectFilter = typeof preferences.projectFilter === "string" ? preferences.projectFilter : "*";
+      if (preferences.sort && typeof preferences.sort === "object") {
+        state.sort = {
+          projects: { ...state.sort.projects, ...(preferences.sort.projects || {}) },
+          sessions: { ...state.sort.sessions, ...(preferences.sort.sessions || {}) }
+        };
+      }
+      state.activePreset = ["day", "month", "last7", "last30"].includes(preferences.activePreset) ? preferences.activePreset : "day";
+      if (preferences.fromDate && preferences.toDate) {
+        fromDateEl.value = preferences.fromDate;
+        toDateEl.value = preferences.toDate;
+        for (const [key, btn] of Object.entries(presetButtons)) btn.classList.toggle("active", key === state.activePreset);
+      } else {
+        setPreset(state.activePreset);
+      }
+      configPanelEl.open = Boolean(preferences.configPanelOpen);
+      document.getElementById("filtersPanel").open = preferences.filtersPanelOpen !== false;
+    }
+
     const statsEl = document.getElementById("stats");
     const trendEl = document.getElementById("trend");
     const modelsEl = document.getElementById("models");
@@ -799,6 +854,8 @@
     let refreshInFlight = false;
     let refreshAbortController = null;
     let loadAbortController = null;
+    let preferencesReady = false;
+    let preferencesSaveTimer = null;
 
     const presetButtons = {
       day: document.getElementById("presetDay"),
@@ -997,6 +1054,7 @@
           ? { key: "aic", direction: "desc", isDefault: true }
           : { key: "startTs", direction: "desc", isDefault: true };
       }
+      savePreferences();
       render();
     }
 
@@ -1401,6 +1459,7 @@
         state.sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
         state.selectedRootPath = payload.root || root;
         rootPathEl.value = state.selectedRootPath;
+        savePreferences();
         render();
         configPanelEl.open = false;
         setStatus(`Dati caricati da ${state.selectedRootPath}. Sessioni disponibili: ${state.sessions.length}.`);
@@ -1473,12 +1532,14 @@
     document.getElementById("reloadPath").addEventListener("click", () => loadFromPath(rootPathEl.value));
     document.getElementById("exportExcel").addEventListener("click", exportToExcel);
     refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
-    document.getElementById("applyFilters").addEventListener("click", render);
-    projectFilterEl.addEventListener("change", () => { state.projectFilter = projectFilterEl.value; render(); });
-    aicValueEl.addEventListener("change", render);
-    autoRefreshEnabledEl.addEventListener("change", startAutoRefresh);
-    refreshIntervalEl.addEventListener("change", startAutoRefresh);
-    groupByEl.addEventListener("change", render);
+    document.getElementById("applyFilters").addEventListener("click", () => { savePreferences(); render(); });
+    projectFilterEl.addEventListener("change", () => { state.projectFilter = projectFilterEl.value; savePreferences(); render(); });
+    aicValueEl.addEventListener("change", () => { savePreferences(); render(); });
+    autoRefreshEnabledEl.addEventListener("change", () => { savePreferences(); startAutoRefresh(); });
+    refreshIntervalEl.addEventListener("change", () => { savePreferences(); startAutoRefresh(); });
+    groupByEl.addEventListener("change", () => { savePreferences(); render(); });
+    configPanelEl.addEventListener("toggle", savePreferences);
+    document.getElementById("filtersPanel").addEventListener("toggle", savePreferences);
     document.getElementById("closeDetail").addEventListener("click", closeSessionDetail);
 
     document.querySelectorAll("th[data-sort-table][data-sort-key]").forEach((header) => {
@@ -1512,14 +1573,27 @@
       render();
     });
 
-    presetButtons.day.addEventListener("click", () => { setPreset("day"); render(); });
-    presetButtons.month.addEventListener("click", () => { setPreset("month"); render(); });
-    presetButtons.last7.addEventListener("click", () => { setPreset("last7"); render(); });
-    presetButtons.last30.addEventListener("click", () => { setPreset("last30"); render(); });
+    presetButtons.day.addEventListener("click", () => { setPreset("day"); savePreferences(); render(); });
+    presetButtons.month.addEventListener("click", () => { setPreset("month"); savePreferences(); render(); });
+    presetButtons.last7.addEventListener("click", () => { setPreset("last7"); savePreferences(); render(); });
+    presetButtons.last30.addEventListener("click", () => { setPreset("last30"); savePreferences(); render(); });
 
     groupByEl.value = "day";
     setPreset("day");
-    loadDefaultPath();
+    async function initializeDashboard() {
+      try {
+        const payload = await dashboardApi.getPreferences();
+        applyPreferences(payload.preferences);
+      } catch (error) {
+        setStatus(`Errore caricamento preferenze: ${error.message}`, true);
+      } finally {
+        preferencesReady = true;
+        const savedRoot = rootPathEl.value.trim();
+        if (savedRoot) await loadFromPath(savedRoot);
+        else await loadDefaultPath();
+      }
+    }
+    initializeDashboard();
   </script>
 </body>
 </html>

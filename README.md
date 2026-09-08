@@ -11,7 +11,7 @@ Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
 
 ### 1. Requisiti
 
-- **Node.js** (versione 18+): [Scarica da nodejs.org](https://nodejs.org/)
+- **Node.js** (versione 20, 22, 23 o 24): [Scarica da nodejs.org](https://nodejs.org/)
   - Durante l'installazione, assicurati di spuntare "Add to PATH"
 
 ### 2. Avvio
@@ -71,6 +71,12 @@ Sono supportate sia le sessioni Copilot Chat di VS Code (`debug-logs`) sia le se
 - **Intervallo custom**: Seleziona "Da" e "A" manualmente
 - **AIC to EUR**: Modifica il valore (default 0.01 €)
 - **Aggregazione**: Per giorno o per mese
+
+Le preferenze della dashboard (percorso, filtri, ordinamento, valore AIC,
+refresh e pannelli aperti) vengono salvate automaticamente nel database SQLite
+locale `%USERPROFILE%\.copilot\cost-dashboard.db` e ripristinate al successivo
+avvio. Il percorso può essere modificato impostando
+`COPILOT_COST_DASHBOARD_DB`.
 
 ## Metriche disponibili
 
