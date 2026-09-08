@@ -27,6 +27,7 @@ class SessionSyncService {
     this.scheduler = scheduler;
     this.cacheStore = new Map();
     this.runningRoots = new Set();
+    this.inFlightRoots = new Map();
     this.pendingRoots = new Set();
     this.intervalSeconds = initialIntervalSeconds(process.env.COPILOT_COST_SYNC_INTERVAL_SECONDS);
     this.timer = null;
@@ -75,7 +76,19 @@ class SessionSyncService {
 
   async syncRoot(rootPath) {
     const root = this.registerRoot(rootPath);
-    if (this.runningRoots.has(root)) return { root, skipped: true };
+    const inFlight = this.inFlightRoots.get(root);
+    if (inFlight) return inFlight;
+
+    const syncPromise = this.performSync(root);
+    this.inFlightRoots.set(root, syncPromise);
+    try {
+      return await syncPromise;
+    } finally {
+      this.inFlightRoots.delete(root);
+    }
+  }
+
+  async performSync(root) {
     this.runningRoots.add(root);
     const startedAt = this.clock();
     this.repository.markSyncStarted(root, startedAt);

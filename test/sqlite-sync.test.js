@@ -74,3 +74,33 @@ test("sync service handles incremental changes, removals, and interval validatio
   assert.throws(() => service.setIntervalSeconds("invalid"), /between/);
   service.close();
 });
+
+test("concurrent sync requests share the initial filesystem scan", async () => {
+  const repository = new SqliteSessionRepository(":memory:");
+  let releaseDiscovery;
+  let discoveryCalls = 0;
+  const discovery = () => new Promise((resolve) => {
+    discoveryCalls += 1;
+    releaseDiscovery = () => resolve({
+      inspectedFolders: 1,
+      sessions: [session("initial")],
+      changed: [session("initial")],
+      removedSessionIds: [],
+      unchangedCount: 0,
+      fullRebuild: true,
+      lastSyncTs: 1
+    });
+  });
+  const service = new SessionSyncService({ repository, discover: discovery });
+  const root = service.registerRoot("fixture-root");
+
+  const first = service.syncRoot(root);
+  const second = service.syncRoot(root);
+  assert.equal(discoveryCalls, 1);
+
+  releaseDiscovery();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(repository.getSessions(root).map((item) => item.sessionId), ["initial"]);
+  service.close();
+});
