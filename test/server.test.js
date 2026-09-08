@@ -112,13 +112,17 @@ test("serves API smoke endpoints", async (t) => {
   const defaultRoot = await requestJson(port, "/api/default-root");
   assert.equal(defaultRoot.statusCode, 200);
   assert.equal(typeof defaultRoot.body.root, "string");
+  assert.equal(defaultRoot.body.requestId.length > 0, true);
+  const health = await requestJson(port, "/api/v1/health");
+  assert.equal(health.statusCode, 200);
+  assert.equal(health.body.status, "ok");
 
   const apiClient = await request(port, "/api-client.js");
   assert.equal(apiClient.statusCode, 200);
   assert.match(apiClient.body, /dashboardApi/);
 
   const exported = await request(port, "/api/export-excel", "POST", {
-    sessions: root.body.sessions,
+    root: fixtureRoot,
     aicValueEuro: 0.01
   });
   assert.equal(exported.statusCode, 200);

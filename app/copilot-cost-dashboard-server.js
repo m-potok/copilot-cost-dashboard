@@ -17,6 +17,39 @@ function getDatabase() {
   return Database;
 }
 
+function getRequestId(req) {
+  const supplied = String(req.headers["x-request-id"] || "").trim();
+  return /^[A-Za-z0-9._-]{1,80}$/.test(supplied) ? supplied : require("crypto").randomUUID();
+}
+
+function normalizeApiPath(pathname) {
+  return pathname.startsWith("/api/v1/") ? `/api${pathname.slice("/api/v1".length)}` : pathname;
+}
+
+function isSafeChildPath(parent, child) {
+  const resolvedParent = path.resolve(parent);
+  const resolvedChild = path.resolve(parent, child);
+  return resolvedChild === resolvedParent || resolvedChild.startsWith(`${resolvedParent}${path.sep}`);
+}
+
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error("Request body too large."));
+        req.destroy();
+        return;
+      }
+      body += chunk;
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
 function closeCopilotDatabases() {
   for (const db of copilotDbHandles.values()) {
     if (db && db.open) db.close();
@@ -29,6 +62,7 @@ const PORT = 4781;
 const BASE_DIR = __dirname;
 const DASHBOARD_FILE = path.join(BASE_DIR, "copilot-cost-dashboard.html");
 const API_CLIENT_FILE = path.join(BASE_DIR, "frontend", "api-client.js");
+const MAX_BODY_BYTES = 1024 * 1024;
 const copilotDbHandles = new Map();
 let hasLoggedFirstRequest = false;
 
@@ -734,7 +768,7 @@ async function readSessionFromDirectory(sessionDir, sessionId) {
 
   let sessionTitle = null;
   const titleLogFile = findTitleLogFile(rows);
-  if (titleLogFile) {
+  if (titleLogFile && isSafeChildPath(sessionDir, titleLogFile)) {
     const titleText = await safeReadText(path.join(sessionDir, titleLogFile));
     if (titleText) {
       const titleRows = parseJsonl(titleText);
@@ -745,6 +779,7 @@ async function readSessionFromDirectory(sessionDir, sessionId) {
   let allRows = [...rows];
   const childLogFiles = findChildSessionLogFiles(rows);
   for (const childLogFile of childLogFiles) {
+    if (!isSafeChildPath(sessionDir, childLogFile)) continue;
     const childPath = path.join(sessionDir, childLogFile);
     const childText = await safeReadText(childPath);
     if (childText) {
@@ -1377,8 +1412,16 @@ async function serveApiClient(res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const requestId = getRequestId(req);
+  res.setHeader("X-Request-Id", requestId);
+  const origin = String(req.headers.origin || "");
+  if (origin && origin !== `http://${HOST}:${PORT}`) {
+    sendJson(res, 403, { error: "Origin not allowed", requestId });
+    return;
+  }
   try {
     const reqUrl = new URL(req.url || "/", `http://${HOST}:${PORT}`);
+    const apiPath = normalizeApiPath(reqUrl.pathname);
 
     if (!hasLoggedFirstRequest) {
       hasLoggedFirstRequest = true;
@@ -1395,42 +1438,48 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (reqUrl.pathname === "/api/default-root") {
-      sendJson(res, 200, { root: getDefaultRoot() });
+    if (apiPath === "/api/health") {
+      sendJson(res, 200, { status: "ok", requestId });
       return;
     }
 
-    if (reqUrl.pathname === "/api/pick-root") {
+    if (apiPath === "/api/default-root") {
+      sendJson(res, 200, { root: getDefaultRoot(), requestId });
+      return;
+    }
+
+    if (apiPath === "/api/pick-root") {
       if (req.method !== "POST") {
-        sendJson(res, 405, { error: "Method not allowed" });
+        sendJson(res, 405, { error: "Method not allowed", requestId });
         return;
       }
       try {
         const selectedPath = await pickDirectoryNative();
         sendJson(res, 200, {
           canceled: !selectedPath,
-          path: selectedPath || null
+          path: selectedPath || null,
+          requestId
         });
 
         server.on("close", closeCopilotDatabases);
       } catch (error) {
-        sendJson(res, 400, { error: error.message || "Errore apertura folder picker." });
+        sendJson(res, 400, { error: error.message || "Errore apertura folder picker.", requestId });
       }
       return;
     }
 
-    if (reqUrl.pathname === "/api/sessions") {
+    if (apiPath === "/api/sessions") {
       const root = reqUrl.searchParams.get("root") || getDefaultRoot();
       try {
         const payload = await readSessionsFromRoot(root);
-        sendJson(res, 200, payload);
+        sendJson(res, 200, { ...payload, requestId });
       } catch (error) {
-        sendJson(res, 400, { error: error.message || "Errore lettura sessioni." });
+        sendJson(res, 400, { error: error.message || "Errore lettura sessioni.", requestId });
       }
       return;
     }
 
-    if (reqUrl.pathname === "/api/sessions-delta") {
+    if (apiPath === "/api/sessions-delta") {
       const root = reqUrl.searchParams.get("root") || getDefaultRoot();
       try {
         const payload = await sessionCatalog.read(root);
@@ -1443,38 +1492,41 @@ const server = http.createServer(async (req, res) => {
           totalSessions: payload.sessions.length,
           fullRebuild: payload.fullRebuild,
           lastSyncTs: payload.lastSyncTs
+          ,requestId
         });
       } catch (error) {
-        sendJson(res, 400, { error: error.message || "Errore refresh sessioni." });
+        sendJson(res, 400, { error: error.message || "Errore refresh sessioni.", requestId });
       }
       return;
     }
 
-    if (reqUrl.pathname === "/api/export-excel") {
+    if (apiPath === "/api/export-excel") {
       if (req.method !== "POST") {
-        sendJson(res, 405, { error: "Method not allowed" });
+        sendJson(res, 405, { error: "Method not allowed", requestId });
         return;
       }
-      let body = "";
-      req.on("data", (chunk) => { body += chunk; });
-      req.on("end", async () => {
+      readRequestBody(req).then(async (body) => {
         try {
           const payload = JSON.parse(body);
-          const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+          const root = String(payload.root || "").trim();
+          if (!root || !path.isAbsolute(root) || !(await exists(root))) {
+            throw new Error("A valid absolute root path is required.");
+          }
+          const sessions = (await sessionCatalog.read(root)).sessions;
           const aicValueEuro = Number(payload.aicValueEuro || 0.01);
           const excelBuffer = createExcelBuffer(xlsx, sessions, aicValueEuro);
           res.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": "attachment; filename=copilot-sessions.xlsx", "Content-Length": excelBuffer.length });
           res.end(excelBuffer);
         } catch (error) {
-          sendJson(res, 400, { error: error.message || "Errore generazione Excel" });
+          sendJson(res, 400, { error: error.message || "Errore generazione Excel", requestId });
         }
-      });
+      }).catch((error) => sendJson(res, error.message === "Request body too large." ? 413 : 400, { error: error.message, requestId }));
       return;
     }
 
-    sendJson(res, 404, { error: "Not found" });
+    sendJson(res, 404, { error: "Not found", requestId });
   } catch (error) {
-    sendJson(res, 500, { error: error.message || "Server error" });
+    sendJson(res, 500, { error: error.message || "Server error", requestId });
   }
 });
 

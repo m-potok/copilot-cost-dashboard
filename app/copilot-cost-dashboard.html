@@ -1352,7 +1352,7 @@
       }
       setLoading(true, "Generazione file Excel...");
       try {
-        const response = await dashboardApi.exportExcel(sessions, aicValueEuro);
+        const response = await dashboardApi.exportExcel(state.selectedRootPath, aicValueEuro);
         if (!response.ok) throw new Error("HTTP " + response.status);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);

@@ -13,11 +13,11 @@
       requestJson(`/api/sessions?root=${encodeURIComponent(root)}`, { signal }),
     getSessionsDelta: (root, signal) =>
       requestJson(`/api/sessions-delta?root=${encodeURIComponent(root)}`, { signal }),
-    exportExcel: (sessions, aicValueEuro, signal) =>
+    exportExcel: (root, aicValueEuro, signal) =>
       fetch("/api/export-excel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessions, aicValueEuro }),
+        body: JSON.stringify({ root, aicValueEuro }),
         signal
       })
   };
