@@ -9,19 +9,20 @@
     "lint": "node scripts/lint.js",
     "type-check": "node scripts/type-check.js",
     "benchmark": "node scripts/benchmark.js",
-    "build:exe": "pkg . --targets node18-win-x64 --output dist/copilot-cost-dashboard.exe"
+    "build:exe": "pkg . --targets node24-win-x64 --output dist/copilot-cost-dashboard.exe"
   },
   "dependencies": {
     "better-sqlite3": "12.4.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "pkg": "^5.8.1"
+    "@yao-pkg/pkg": "^6.22.0"
   },
   "pkg": {
     "assets": [
       "app/copilot-cost-dashboard.html"
       ,"app/frontend/api-client.js"
+      ,"node_modules/better-sqlite3/build/Release/better_sqlite3.node"
     ]
   }
 }

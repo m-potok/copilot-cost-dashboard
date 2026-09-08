@@ -17,15 +17,15 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw "npm non trovato. Verifica l'installazione di Node.js."
 }
 
-Write-Host "[1/3] Install dipendenze di build..." -ForegroundColor Yellow
+Write-Host "[1/2] Install dipendenze di build..." -ForegroundColor Yellow
 npm ci
 if ($LASTEXITCODE -ne 0) { throw "npm ci fallito." }
 
-Write-Host "[2/3] Build EXE con pkg..." -ForegroundColor Yellow
+Write-Host "[2/2] Build EXE con @yao-pkg/pkg..." -ForegroundColor Yellow
 npm run build:exe
 if ($LASTEXITCODE -ne 0) { throw "Build EXE fallita." }
 
-Write-Host "[3/3] Completato." -ForegroundColor Yellow
+Write-Host "Completato." -ForegroundColor Yellow
 
 $exePath = Join-Path $projectDir "dist\copilot-cost-dashboard.exe"
 if (Test-Path $exePath) {
