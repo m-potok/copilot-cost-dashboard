@@ -1,8 +1,8 @@
 const path = require("path");
-const { safeReadText, statSafe } = require("../infrastructure/fs-reader");
-const { readCopilotSessionInfo, readCopilotStoreUsage } = require("../infrastructure/copilot-store");
-const { parseJsonl } = require("../domain/session-metrics");
-const { summarizeStateEditingOperations } = require("../domain/editing-metrics");
+const { safeReadText, statSafe } = require("../../infrastructure/fs-reader");
+const { readCopilotSessionInfo, readCopilotStoreUsage } = require("./store");
+const { parseJsonl } = require("../../domain/session-metrics");
+const { summarizeStateEditingOperations } = require("../../domain/editing-metrics");
 function isoToTs(value) {
   const ts = Date.parse(String(value || ""));
   return Number.isFinite(ts) ? ts : null;
