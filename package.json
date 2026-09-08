@@ -6,6 +6,8 @@
   "bin": "app/copilot-cost-dashboard-server.js",
   "scripts": {
     "test": "node --test",
+    "lint": "node scripts/lint.js",
+    "type-check": "node scripts/type-check.js",
     "benchmark": "node scripts/benchmark.js",
     "build:exe": "pkg . --targets node18-win-x64 --output dist/copilot-cost-dashboard.exe"
   },

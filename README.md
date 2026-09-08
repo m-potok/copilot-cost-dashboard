@@ -34,6 +34,13 @@ npm ci
 npm test
 ```
 
+I controlli di qualita separati sono disponibili con:
+
+```bash
+npm run lint
+npm run type-check
+```
+
 Per misurare discovery e refresh incrementale sul dataset fixture:
 
 ```bash
@@ -191,7 +198,7 @@ Opzione 2 (PowerShell):
 
 Lo script:
 
-1. Installa le dipendenze di build (`pkg`)
+1. Installa le dipendenze bloccate dal lockfile (`npm ci`)
 2. Compila l'eseguibile
 3. Salva il file in `dist\copilot-cost-dashboard.exe`
 
@@ -210,6 +217,15 @@ http://127.0.0.1:4781
 ### Cosa condividere (modalita standalone)
 
 - `dist\copilot-cost-dashboard.exe`
+
+Per verificare l'integrita dell'artifact, calcola il checksum SHA-256:
+
+```powershell
+Get-FileHash .\dist\copilot-cost-dashboard.exe -Algorithm SHA256
+```
+
+La CI Windows esegue test, lint, type-check e build EXE e pubblica
+l'eseguibile come artifact.
 
 Note:
 

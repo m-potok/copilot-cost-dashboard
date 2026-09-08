@@ -18,8 +18,8 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host "[1/3] Install dipendenze di build..." -ForegroundColor Yellow
-npm install
-if ($LASTEXITCODE -ne 0) { throw "npm install fallito." }
+npm ci
+if ($LASTEXITCODE -ne 0) { throw "npm ci fallito." }
 
 Write-Host "[2/3] Build EXE con pkg..." -ForegroundColor Yellow
 npm run build:exe
