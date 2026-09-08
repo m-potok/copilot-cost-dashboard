@@ -299,6 +299,46 @@
       font-size: 0.74rem;
     }
 
+    th.sortable {
+      padding: 0;
+    }
+
+    .sort-button {
+      width: 100%;
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: inherit;
+      gap: 6px;
+      border: 0;
+      padding: 9px 10px;
+      font: inherit;
+      color: inherit;
+      text-align: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .sort-button:hover,
+    .sort-button:focus-visible {
+      color: var(--accent);
+      background: #eef6fd;
+    }
+
+    .sort-button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+
+    .sort-indicator {
+      color: var(--accent);
+      font-size: 0.8rem;
+      line-height: 1;
+      opacity: 0.9;
+    }
+
     td.num, th.num {
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -626,16 +666,16 @@
       <table>
         <thead>
           <tr>
-            <th>Progetto</th>
-            <th class="num">Sessioni</th>
-            <th class="num">Token</th>
-            <th class="num">AIC</th>
-            <th class="num">File</th>
-            <th class="num">+ accettate</th>
-            <th class="num">- accettate</th>
-            <th class="num">+ rifiutate</th>
-            <th class="num">- rifiutate</th>
-            <th class="num">Righe non classificate</th>
+            <th class="sortable" data-sort-table="projects" data-sort-key="project"><button class="sort-button" type="button">Progetto<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="sessions"><button class="sort-button" type="button">Sessioni<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="tokens"><button class="sort-button" type="button">Token<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="aic"><button class="sort-button" type="button">AIC<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="files"><button class="sort-button" type="button">File<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="addedAccepted"><button class="sort-button" type="button">+ accettate<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="removedAccepted"><button class="sort-button" type="button">- accettate<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="addedRejected"><button class="sort-button" type="button">+ rifiutate<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="removedRejected"><button class="sort-button" type="button">- rifiutate<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="inferred"><button class="sort-button" type="button">Righe non classificate<span class="sort-indicator" aria-hidden="true"></span></button></th>
           </tr>
         </thead>
         <tbody id="projectsBody"></tbody>
@@ -646,18 +686,18 @@
       <table>
         <thead>
           <tr>
-            <th>Sessione</th>
-            <th>Progetto</th>
-            <th>Inizio</th>
-            <th class="num">Model Turns</th>
-            <th class="num">Tool Calls</th>
-            <th class="num">Input</th>
-            <th class="num">Cached Input</th>
-            <th class="num">Output</th>
-            <th class="num">Totale Token</th>
-            <th class="num">Errors</th>
-            <th class="num">AIC</th>
-            <th class="num">Costo (€)</th>
+            <th class="sortable" data-sort-table="sessions" data-sort-key="title"><button class="sort-button" type="button">Sessione<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="sortable" data-sort-table="sessions" data-sort-key="project"><button class="sort-button" type="button">Progetto<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="sortable" data-sort-table="sessions" data-sort-key="startTs"><button class="sort-button" type="button">Inizio<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="modelTurns"><button class="sort-button" type="button">Model Turns<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="toolCalls"><button class="sort-button" type="button">Tool Calls<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="inputTokens"><button class="sort-button" type="button">Input<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="cachedTokens"><button class="sort-button" type="button">Cached Input<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="outputTokens"><button class="sort-button" type="button">Output<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="totalTokens"><button class="sort-button" type="button">Totale Token<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="errors"><button class="sort-button" type="button">Errors<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="aic"><button class="sort-button" type="button">AIC<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="sessions" data-sort-key="euro"><button class="sort-button" type="button">Costo (€)<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th>Dettaglio</th>
           </tr>
         </thead>
@@ -721,7 +761,11 @@
       projectFilter: "*",
       availableProjects: [],
       selectedRootPath: "",
-      activePreset: "day"
+      activePreset: "day",
+      sort: {
+        projects: { key: "aic", direction: "desc", isDefault: true },
+        sessions: { key: "startTs", direction: "desc", isDefault: true }
+      }
     };
 
     const statsEl = document.getElementById("stats");
@@ -910,8 +954,54 @@
       projectFilterEl.value = state.projectFilter;
     }
 
+    function sortRows(rows, key, direction) {
+      const multiplier = direction === "asc" ? 1 : -1;
+      return [...rows].sort((left, right) => {
+        const a = left[key];
+        const b = right[key];
+        const aMissing = a === null || a === undefined || a === "";
+        const bMissing = b === null || b === undefined || b === "";
+        if (aMissing || bMissing) {
+          if (aMissing && bMissing) return 0;
+          return aMissing ? 1 : -1;
+        }
+        if (typeof a === "string" || typeof b === "string") {
+          return String(a).localeCompare(String(b), "it", { sensitivity: "base" }) * multiplier;
+        }
+        return (Number(a) - Number(b)) * multiplier;
+      });
+    }
+
+    function updateSortIndicators() {
+      document.querySelectorAll("th[data-sort-table][data-sort-key]").forEach((header) => {
+        const tableSort = state.sort[header.dataset.sortTable];
+        const isActive = tableSort && tableSort.key === header.dataset.sortKey;
+        const indicator = header.querySelector(".sort-indicator");
+        const button = header.querySelector("button");
+        header.setAttribute("aria-sort", isActive
+          ? (tableSort.direction === "asc" ? "ascending" : "descending")
+          : "none");
+        indicator.textContent = isActive ? (tableSort.direction === "asc" ? "▲" : "▼") : "↕";
+        button.setAttribute("aria-label", `Ordina per ${button.firstChild.textContent.trim()} ${isActive && tableSort.direction === "asc" ? "in ordine decrescente" : "in ordine crescente"}`);
+      });
+    }
+
+    function sortTable(table, key) {
+      const current = state.sort[table];
+      if (current.key !== key || current.isDefault) {
+        state.sort[table] = { key, direction: "asc", isDefault: false };
+      } else if (current.direction === "asc") {
+        state.sort[table] = { key, direction: "desc", isDefault: false };
+      } else {
+        state.sort[table] = table === "projects"
+          ? { key: "aic", direction: "desc", isDefault: true }
+          : { key: "startTs", direction: "desc", isDefault: true };
+      }
+      render();
+    }
+
     function renderProjects(sessions, aicValueEuro) {
-      const rows = aggregateProjects(sessions, aicValueEuro);
+      const rows = sortRows(aggregateProjects(sessions, aicValueEuro), state.sort.projects.key, state.sort.projects.direction);
       projectsBodyEl.innerHTML = rows.length ? rows.map((r) => `
         <tr data-project="${escapeHtml(r.project)}" style="cursor:pointer">
           <td>${escapeHtml(r.project)}</td><td class="num">${fmtInt(r.sessions)}</td><td class="num">${fmtInt(r.tokens)}</td>
@@ -1084,10 +1174,15 @@
         return;
       }
 
-      const rows = [...sessions].sort((a, b) => (b.startTs || 0) - (a.startTs || 0));
+      const rows = sortRows(sessions.map((session) => ({
+        ...session,
+        title: (session.title && String(session.title).trim()) ? String(session.title).trim() : "Titolo non disponibile",
+        project: session.project || "Non identificato",
+        euro: session.aic * aicValueEuro
+      })), state.sort.sessions.key, state.sort.sessions.direction);
       sessionsBodyEl.innerHTML = rows.map((s) => {
         const euro = s.aic * aicValueEuro;
-        const safeTitle = (s.title && String(s.title).trim()) ? String(s.title).trim() : "Titolo non disponibile";
+        const safeTitle = s.title;
         return `
           <tr>
             <td>
@@ -1279,6 +1374,7 @@
 
       renderTable(sessions, aicValueEuro);
       renderProjects(sessionsInRange(), aicValueEuro);
+      updateSortIndicators();
 
       const missing = totals.missingPriceTurns;
       if (!state.selectedRootPath) {
@@ -1384,6 +1480,12 @@
     refreshIntervalEl.addEventListener("change", startAutoRefresh);
     groupByEl.addEventListener("change", render);
     document.getElementById("closeDetail").addEventListener("click", closeSessionDetail);
+
+    document.querySelectorAll("th[data-sort-table][data-sort-key]").forEach((header) => {
+      header.querySelector("button").addEventListener("click", () => {
+        sortTable(header.dataset.sortTable, header.dataset.sortKey);
+      });
+    });
 
     detailModalEl.addEventListener("click", (event) => {
       if (event.target === detailModalEl) closeSessionDetail();
