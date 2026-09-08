@@ -898,6 +898,16 @@ function getLatestEvent(rows, type) {
   return null;
 }
 
+function getLatestUsageEvent(rows) {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row && (row.type === "session.usage_checkpoint" || row.type === "session.shutdown")) {
+      return row;
+    }
+  }
+  return null;
+}
+
 function getMessageText(content) {
   if (typeof content === "string") return content.trim();
   if (!Array.isArray(content)) return "";
@@ -1025,8 +1035,8 @@ async function readSessionFromStateDirectory(sessionDir, sessionId) {
   const startEvent = rows.find((row) => row && row.type === "session.start");
   const latestShutdown = getLatestEvent(rows, "session.shutdown");
   const shutdownData = (latestShutdown && latestShutdown.data) || {};
-  const latestCheckpoint = getLatestEvent(rows, "session.usage_checkpoint");
-  const checkpointData = (latestCheckpoint && latestCheckpoint.data) || {};
+  const latestUsageEvent = getLatestUsageEvent(rows);
+  const latestUsageData = (latestUsageEvent && latestUsageEvent.data) || {};
   const modelMetrics = shutdownData.modelMetrics || {};
   const shutdownTokenDetails = shutdownData.tokenDetails || {};
   const modelAgg = buildStateModelAgg(modelMetrics);
@@ -1073,7 +1083,7 @@ async function readSessionFromStateDirectory(sessionDir, sessionId) {
     (rows[0] && rows[0].timestamp)
   );
   const endTs = isoToTs(rows[rows.length - 1] && rows[rows.length - 1].timestamp);
-  const aic = Number(shutdownData.totalNanoAiu || checkpointData.totalNanoAiu || 0) / 1000000000;
+  const aic = Number(latestUsageData.totalNanoAiu || 0) / 1000000000;
   const storeUsage = readCopilotStoreUsage(sessionId);
   const resolvedUsage = storeUsage || usage;
   const editing = summarizeStateEditingOperations(rows);
