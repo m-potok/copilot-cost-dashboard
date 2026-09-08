@@ -53,6 +53,23 @@ il refresh. Possono essere sovrascritte con `BENCHMARK_MAX_INITIAL_MS` e
 
 ## Uso
 
+### Architettura SQLite e sincronizzazione
+
+La dashboard legge esclusivamente dal database SQLite locale; non esegue scansioni
+del filesystem durante le richieste di visualizzazione, delta o export. Un servizio
+indipendente sincronizza periodicamente i root registrati (aggiunte e modifiche). Le sessioni rimosse
+dal filesystem restano archiviate in SQLite e continuano a essere visualizzate.
+Ogni sessione mantiene inoltre lo stato persistito `active` o `deleted`,
+con gli istanti di ultima presenza e rilevazione della cancellazione.
+Il valore iniziale è di 60 secondi e può essere impostato con
+`COPILOT_COST_SYNC_INTERVAL_SECONDS` (valori validi: 1-86400 secondi) oppure
+modificato dalla sezione Configurazioni della dashboard. Il database è salvato
+fuori dal repository in `%USERPROFILE%\.copilot-cost-dashboard\sessions.sqlite`;
+`COPILOT_COST_DB_PATH` (o `COPILOT_DASHBOARD_DB_PATH`) consente di cambiarne il
+percorso. Un valore environment non valido usa il default di 60 secondi, mentre
+le modifiche runtime non valide vengono rifiutate. "Aggiorna ora" legge SQLite,
+mentre "Sincronizza ora" avvia esplicitamente una scansione filesystem.
+
 ### Default automatico
 Alla prima apertura, il tracker carica automaticamente i dati da:
 ```

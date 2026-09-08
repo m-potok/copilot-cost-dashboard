@@ -38,7 +38,10 @@ function createRouter({ controllers, host, port, onFirstRequest }) {
     ["/api/pick-root", "pickRoot"],
     ["/api/sessions", "sessions"],
     ["/api/sessions-delta", "sessionsDelta"],
-    ["/api/export-excel", "exportExcel"]
+    ["/api/export-excel", "exportExcel"],
+    ["/api/sync-status", "syncStatus"],
+    ["/api/sync-interval", "syncInterval"],
+    ["/api/sync", "syncNow"]
   ]);
 
   return async function router(req, res, server) {
@@ -64,7 +67,7 @@ function createRouter({ controllers, host, port, onFirstRequest }) {
         sendJson(res, 404, { error: "Not found", requestId });
         return;
       }
-      if (controllerName === "exportExcel") {
+      if (["exportExcel", "syncInterval", "syncNow"].includes(controllerName)) {
         if (req.method !== "POST") {
           sendJson(res, 405, { error: "Method not allowed", requestId });
           return;

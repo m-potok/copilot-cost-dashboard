@@ -1,5 +1,5 @@
 const { createExcelBuffer } = require("./infrastructure/excel-exporter");
-const { server, sessionCatalog, closeCopilotDatabases, startServer } = require("./bootstrap");
+const { server, sessionCatalog, sessionRepository, syncService, closeCopilotDatabases, startServer } = require("./bootstrap");
 const { parseJsonl, extractChatSessionTurns, buildSessionFromFallbackTurns, analyzeSession } = require("./domain/session-metrics");
 const { buildModelPriceMap } = require("./domain/pricing");
 const { summarizeEditingOperations } = require("./domain/editing-metrics");
@@ -8,6 +8,8 @@ const { readSessionsFromRoot, refreshSessionsFromRoot } = require("./infrastruct
 module.exports = {
   server,
   sessionCatalog,
+  sessionRepository,
+  syncService,
   createExcelBuffer,
   closeCopilotDatabases,
   startServer,

@@ -7,6 +7,7 @@ const { SessionSource } = require("../domain/session-source");
 const { readSessionFromDirectory, buildSessionFingerprint } = require("../adapters/vscode-source");
 const { readSessionFromStateDirectory, buildStateFingerprint } = require("../adapters/copilot-app/source");
 const sessionSources = new Map([["debug", new SessionSource("debug", readSessionFromDirectory, buildSessionFingerprint)],["state", new SessionSource("state", readSessionFromStateDirectory, buildStateFingerprint)]]);
+let sessionReadObserver = null;
 async function refreshSessionsFromRoot(rootPath, cacheStore = new Map()) {
   const resolvedRoot = path.resolve(rootPath);
   if (!(await exists(resolvedRoot))) {
@@ -22,20 +23,27 @@ async function refreshSessionsFromRoot(rootPath, cacheStore = new Map()) {
       : path.join(resolvedRoot, ".copilot", "session-state"));
   const hasStateRoot = await exists(stateRoot);
   if (!debugDirs.length && !hasStateRoot) {
+    const previous = cacheStore.get(resolvedRoot) || {
+      sessionsById: new Map(),
+      fingerprints: new Map(),
+      lastSyncTs: 0
+    };
+    const removedSessionIds = [...previous.sessionsById.keys()];
+    const lastSyncTs = Date.now();
     cacheStore.set(resolvedRoot, {
       sessionsById: new Map(),
       fingerprints: new Map(),
-      lastSyncTs: Date.now()
+      lastSyncTs
     });
     return {
       root: resolvedRoot,
       inspectedFolders: 0,
       sessions: [],
       changed: [],
-      removedSessionIds: [],
+      removedSessionIds,
       unchangedCount: 0,
-      fullRebuild: true,
-      lastSyncTs: Date.now()
+      fullRebuild: previous.lastSyncTs === 0,
+      lastSyncTs
     };
   }
 
@@ -195,6 +203,7 @@ async function findDebugLogsDirectories(rootPath) {
 
 async function readSessionsFromRoot(rootPath) {
   const refreshed = await sessionCatalog.read(rootPath);
+  if (sessionReadObserver) await sessionReadObserver(refreshed);
   return {
     root: refreshed.root,
     inspectedFolders: refreshed.inspectedFolders,
@@ -202,5 +211,9 @@ async function readSessionsFromRoot(rootPath) {
   };
 }
 
+function setSessionReadObserver(observer) {
+  sessionReadObserver = typeof observer === "function" ? observer : null;
+}
+
 const sessionCatalog = new SessionCatalog((rootPath, cacheStore) => refreshSessionsFromRoot(rootPath, cacheStore));
-module.exports = { sessionCatalog, refreshSessionsFromRoot, findDebugLogsDirectories, readSessionsFromRoot };
+module.exports = { sessionCatalog, refreshSessionsFromRoot, findDebugLogsDirectories, readSessionsFromRoot, setSessionReadObserver };
