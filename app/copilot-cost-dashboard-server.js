@@ -704,6 +704,66 @@ function summarizeEditingOperations(stateText, signalMap) {
   return empty;
 }
 
+function summarizeStateEditingOperations(rows) {
+  const summary = {
+    available: false,
+    files: 0,
+    operations: 0,
+    addedAccepted: 0,
+    removedAccepted: 0,
+    addedRejected: 0,
+    removedRejected: 0,
+    addedManual: 0,
+    removedManual: 0,
+    addedInferred: 0,
+    removedInferred: 0,
+    details: []
+  };
+  const completions = new Map();
+  for (const row of rows) {
+    if (!row || row.type !== "tool.execution_complete") continue;
+    const data = row.data || {};
+    if (data.toolCallId) completions.set(String(data.toolCallId), data);
+  }
+
+  const byFile = new Map();
+  for (const row of rows) {
+    if (!row || row.type !== "tool.execution_start") continue;
+    const data = row.data || {};
+    const toolName = String(data.toolName || "").toLowerCase();
+    if (!["apply_patch", "edit", "edit_file", "create_file", "delete_file"].includes(toolName)) continue;
+
+    const rawArgs = typeof data.arguments === "string"
+      ? data.arguments
+      : JSON.stringify(data.arguments || {});
+    const completion = completions.get(String(data.toolCallId || ""));
+    const status = completion && completion.success === false ? "rejected" : (completion ? "accepted" : "inferred");
+    const files = [...rawArgs.matchAll(/\*\*\* (?:Update|Add|Delete) File:\s*(.+)/g)].map((match) => match[1].trim());
+    const targets = files.length ? files : ["(file non identificato)"];
+    const added = (rawArgs.match(/^\+(?!\+\+\+)/gm) || []).length;
+    const removed = (rawArgs.match(/^-(?!---)/gm) || []).length;
+    const detailAddedKey = status === "accepted" ? "addedAccepted" : status === "rejected" ? "addedRejected" : "addedInferred";
+    const detailRemovedKey = status === "accepted" ? "removedAccepted" : status === "rejected" ? "removedRejected" : "removedInferred";
+
+    summary.operations += 1;
+    summary[detailAddedKey] += added;
+    summary[detailRemovedKey] += removed;
+    for (const file of targets) {
+      const detail = byFile.get(file) || { file, operations: 0, added: 0, removed: 0, statuses: [] };
+      detail.operations += 1;
+      detail.added += added;
+      detail.removed += removed;
+      detail.statuses.push({ status, operation: toolName, requestId: data.toolCallId || null, added, removed });
+      byFile.set(file, detail);
+    }
+  }
+
+  summary.available = summary.operations > 0;
+  summary.files = byFile.size;
+  summary.details = [...byFile.values()];
+  return summary;
+}
+
 async function readProjectInfo(workspaceDir) {
   const text = await safeReadText(path.join(workspaceDir, "workspace.json"));
   if (!text) return { project: null, projectPath: null, projectSource: "unidentified" };
@@ -859,6 +919,51 @@ function extractWorkspaceName(workspaceText) {
   return match[1].replace(/^["']|["']$/g, "").trim() || null;
 }
 
+function extractWorkspaceField(workspaceText, field) {
+  if (!workspaceText) return null;
+  const match = workspaceText.match(new RegExp(`^\\s*${field}:\\s*(.+?)\\s*$`, "m"));
+  return match ? match[1].replace(/^["']|["']$/g, "").trim() || null : null;
+}
+
+function projectInfoFromWorkspace(workspaceText) {
+  const projectPath = extractWorkspaceField(workspaceText, "git_root") ||
+    extractWorkspaceField(workspaceText, "cwd");
+  if (!projectPath) return { project: null, projectPath: null, projectSource: "unidentified" };
+  return {
+    project: path.basename(projectPath.replace(/[\\/]$/, "")) || projectPath,
+    projectPath,
+    projectSource: extractWorkspaceField(workspaceText, "git_root") ? "git_root" : "cwd"
+  };
+}
+
+function projectInfoFromRepository(repository, cwd) {
+  const repositoryName = String(repository || "").trim().split("/").pop() || null;
+  const currentPath = String(cwd || "").trim();
+  const worktreeMatch = currentPath.match(/^(.+?)[\\/]copilot-worktrees[\\/][^\\/]+[\\/][^\\/]+(?:[\\/]|$)/i);
+  const projectPath = worktreeMatch
+    ? path.join(worktreeMatch[1], repositoryName || "")
+    : null;
+  return {
+    project: repositoryName,
+    projectPath: projectPath && repositoryName ? projectPath : null,
+    projectSource: repositoryName ? "repository" : "unidentified"
+  };
+}
+
+function readCopilotSessionInfo(sessionId) {
+  const dbPath = path.join(os.homedir(), ".copilot", "session-store.db");
+  try {
+    let db = copilotDbHandles.get(dbPath);
+    if (!db) {
+      db = new Database(dbPath, { readonly: true, fileMustExist: true });
+      copilotDbHandles.set(dbPath, db);
+    }
+    return db.prepare("SELECT repository, cwd FROM sessions WHERE id = ?").get(sessionId) || null;
+  } catch {
+    return null;
+  }
+}
+
 function readCopilotStoreUsage(sessionId) {
   const dbPath = path.join(os.homedir(), ".copilot", "session-store.db");
   try {
@@ -949,6 +1054,16 @@ async function readSessionFromStateDirectory(sessionDir, sessionId) {
   const fallbackInput = modelAgg.length ? 0 : 0;
   const fallbackModels = modelAgg.length ? modelAgg : (modelTurns ? [{ model: fallbackModel, turns: modelTurns, aic: 0 }] : []);
   const workspaceText = await safeReadText(path.join(sessionDir, "workspace.yaml"));
+  const workspaceProjectInfo = projectInfoFromWorkspace(workspaceText);
+  const storeInfo = readCopilotSessionInfo(sessionId);
+  const workspacePath = workspaceProjectInfo.projectPath || "";
+  const repositoryProjectInfo = projectInfoFromRepository(storeInfo && storeInfo.repository, storeInfo && storeInfo.cwd);
+  const isWorktree = /[\\/]copilot-worktrees[\\/]/i.test(workspacePath);
+  const projectInfo = isWorktree && repositoryProjectInfo.project
+    ? repositoryProjectInfo
+    : (workspaceProjectInfo.project
+      ? workspaceProjectInfo
+      : repositoryProjectInfo);
   const titleRow = rows.find((row) => row && row.type === "user.message");
   const title = extractWorkspaceName(workspaceText) ||
     getMessageText(titleRow && titleRow.data && titleRow.data.content).slice(0, 120) || null;
@@ -961,6 +1076,7 @@ async function readSessionFromStateDirectory(sessionDir, sessionId) {
   const aic = Number(shutdownData.totalNanoAiu || checkpointData.totalNanoAiu || 0) / 1000000000;
   const storeUsage = readCopilotStoreUsage(sessionId);
   const resolvedUsage = storeUsage || usage;
+  const editing = summarizeStateEditingOperations(rows);
 
   return {
     sessionId,
@@ -978,7 +1094,9 @@ async function readSessionFromStateDirectory(sessionDir, sessionId) {
     missingPriceTurns: 0,
     autoDiscountTurns: 0,
     autoDiscountAmount: 0,
-    modelAgg: storeUsage ? storeUsage.modelAgg : fallbackModels
+    modelAgg: storeUsage ? storeUsage.modelAgg : fallbackModels,
+    ...projectInfo,
+    editing
   };
 }
 
