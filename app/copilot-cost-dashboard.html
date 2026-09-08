@@ -835,8 +835,8 @@
       return {
         rootPath: rootPathEl.value.trim(),
         aicValueEuro: Number(aicValueEl.value || 0.01),
-        autoRefreshEnabled: autoRefreshEnabledEl.value,
-        refreshInterval: refreshIntervalEl.value,
+        autoRefreshEnabled: "on",
+        refreshInterval: "30",
         fromDate: fromDateEl.value,
         toDate: toDateEl.value,
         groupBy: groupByEl.value,
@@ -864,8 +864,6 @@
       if (!preferences || typeof preferences !== "object") return;
       rootPathEl.value = typeof preferences.rootPath === "string" ? preferences.rootPath : "";
       aicValueEl.value = Number.isFinite(Number(preferences.aicValueEuro)) ? preferences.aicValueEuro : 0.01;
-      autoRefreshEnabledEl.value = preferences.autoRefreshEnabled === "off" ? "off" : "on";
-      refreshIntervalEl.value = ["15", "30", "60", "120"].includes(preferences.refreshInterval) ? preferences.refreshInterval : "30";
       groupByEl.value = preferences.groupBy === "month" ? "month" : "day";
       state.projectFilter = typeof preferences.projectFilter === "string" ? preferences.projectFilter : "*";
       if (preferences.sort && typeof preferences.sort === "object") {
@@ -1636,12 +1634,9 @@
     document.getElementById("exportExcel").addEventListener("click", exportToExcel);
     document.getElementById("syncNow").addEventListener("click", syncSelectedRoot);
     document.getElementById("applySyncInterval").addEventListener("click", applySyncInterval);
-    refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
     document.getElementById("applyFilters").addEventListener("click", () => { savePreferences(); render(); });
     projectFilterEl.addEventListener("change", () => { state.projectFilter = projectFilterEl.value; savePreferences(); render(); });
     aicValueEl.addEventListener("change", () => { savePreferences(); render(); });
-    autoRefreshEnabledEl.addEventListener("change", () => { savePreferences(); startAutoRefresh(); });
-    refreshIntervalEl.addEventListener("change", () => { savePreferences(); startAutoRefresh(); });
     groupByEl.addEventListener("change", () => { savePreferences(); render(); });
     configPanelEl.addEventListener("toggle", savePreferences);
     document.getElementById("filtersPanel").addEventListener("toggle", savePreferences);

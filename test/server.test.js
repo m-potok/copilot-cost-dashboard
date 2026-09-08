@@ -13,6 +13,7 @@ const {
   analyzeSession,
   readSessionsFromRoot
 } = require("../app/copilot-cost-dashboard-server");
+const { createControllers } = require("../app/http/controllers");
 
 const fixtureRoot = path.join(__dirname, "fixtures");
 
@@ -127,4 +128,40 @@ test("serves API smoke endpoints", async (t) => {
   });
   assert.equal(exported.statusCode, 200);
   assert.equal(exported.body.slice(0, 2), "PK");
+});
+
+test("waits for the first root sync before returning sessions", async () => {
+  let synced = false;
+  const root = path.resolve("fixture-root");
+  const controllers = createControllers({
+    dashboardFile: "",
+    apiClientFile: "",
+    sessionCatalog: null,
+    sessionRepository: {
+      registerRoot: () => root,
+      getSessions: () => synced ? [{ sessionId: "initial" }] : [],
+      getRoots: () => []
+    },
+    syncService: {
+      registerRoot: () => root,
+      getStatus: () => ({ root: { status: synced ? "ready" : "registered", inspectedFolders: 1 } }),
+      syncRoot: async () => { synced = true; }
+    },
+    xlsx: null,
+    getDefaultRoot: () => root,
+    preferencesStore: { DEFAULT_PREFERENCES: {}, readPreferences: () => ({}), savePreferences: (value) => value },
+    closeDatabases: () => {}
+  });
+  let responseBody = "";
+  const response = {
+    writeHead() {},
+    end(body) { responseBody = body; }
+  };
+
+  await controllers.sessions({}, response, {
+    url: new URL(`http://127.0.0.1/api/sessions?root=${encodeURIComponent(root)}`),
+    requestId: "test-request"
+  });
+
+  assert.deepEqual(JSON.parse(responseBody).sessions, [{ sessionId: "initial" }]);
 });

@@ -185,10 +185,15 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessi
       const root = context.url.searchParams.get("root") || getDefaultRoot();
       try {
         const registeredRoot = registerRoot(root);
-        const sessions = sessionRepository.getSessions(registeredRoot || root);
-        const syncStatus = statusFor(registeredRoot || root);
+        const selectedRoot = registeredRoot || root;
+        const syncStatusBeforeRead = statusFor(selectedRoot);
+        if (!syncStatusBeforeRead.root || syncStatusBeforeRead.root.status !== "ready") {
+          await syncService.syncRoot(selectedRoot);
+        }
+        const sessions = sessionRepository.getSessions(selectedRoot);
+        const syncStatus = statusFor(selectedRoot);
         sendJson(res, 200, {
-          root: registeredRoot || path.resolve(root),
+          root: selectedRoot,
           inspectedFolders: syncStatus && syncStatus.root ? syncStatus.root.inspectedFolders : 0,
           sessions,
           source: "sqlite",
