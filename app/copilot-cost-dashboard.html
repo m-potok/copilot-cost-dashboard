@@ -731,6 +731,7 @@
             <th class="num sortable" data-sort-table="projects" data-sort-key="sessions"><button class="sort-button" type="button">Sessioni<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th class="num sortable" data-sort-table="projects" data-sort-key="tokens"><button class="sort-button" type="button">Token<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th class="num sortable" data-sort-table="projects" data-sort-key="aic"><button class="sort-button" type="button">AIC<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th class="num sortable" data-sort-table="projects" data-sort-key="euro"><button class="sort-button" type="button">Costo (€)<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th class="num sortable" data-sort-table="projects" data-sort-key="files"><button class="sort-button" type="button">File<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th class="num sortable" data-sort-table="projects" data-sort-key="addedAccepted"><button class="sort-button" type="button">+ accettate<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th class="num sortable" data-sort-table="projects" data-sort-key="removedAccepted"><button class="sort-button" type="button">- accettate<span class="sort-indicator" aria-hidden="true"></span></button></th>
@@ -1079,11 +1080,11 @@
       projectsBodyEl.innerHTML = rows.length ? rows.map((r) => `
         <tr data-project="${escapeHtml(r.project)}" style="cursor:pointer">
           <td>${escapeHtml(r.project)}</td><td class="num">${fmtInt(r.sessions)}</td><td class="num">${fmtInt(r.tokens)}</td>
-          <td class="num">${fmtNum(r.aic, 4)}</td><td class="num">${fmtInt(r.files)}</td>
+          <td class="num">${fmtNum(r.aic, 4)}</td><td class="num">${fmtEuro(r.euro)}</td><td class="num">${fmtInt(r.files)}</td>
           <td class="num">${fmtInt(r.addedAccepted)}</td><td class="num">${fmtInt(r.removedAccepted)}</td>
           <td class="num">${fmtInt(r.addedRejected)}</td><td class="num">${fmtInt(r.removedRejected)}</td>
           <td class="num">${fmtInt(r.inferred)}</td>
-        </tr>`).join("") : `<tr><td colspan="10">Nessun progetto nel range selezionato.</td></tr>`;
+        </tr>`).join("") : `<tr><td colspan="11">Nessun progetto nel range selezionato.</td></tr>`;
     }
 
     function aggregateTotals(sessions, aicValueEuro) {
