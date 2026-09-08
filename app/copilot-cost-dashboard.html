@@ -598,6 +598,10 @@
                 <option value="*">Tutti i progetti</option>
               </select>
             </div>
+            <div class="field">
+              <label for="projectSearch">Cerca progetto</label>
+              <input id="projectSearch" type="search" placeholder="Nome progetto..." autocomplete="off" />
+            </div>
             <button id="applyFilters" class="btn" type="button">Applica filtri</button>
           </div>
         </div>
@@ -718,6 +722,8 @@
     const state = {
       sessions: [],
       projectFilter: "*",
+      projectSearch: "",
+      availableProjects: [],
       selectedRootPath: "",
       activePreset: "day"
     };
@@ -728,6 +734,7 @@
     const sessionsBodyEl = document.getElementById("sessionsBody");
     const projectsBodyEl = document.getElementById("projectsBody");
     const projectFilterEl = document.getElementById("projectFilter");
+    const projectSearchEl = document.getElementById("projectSearch");
     const loadedCountEl = document.getElementById("loadedCount");
     const statusEl = document.getElementById("status");
     const configPanelEl = document.getElementById("configPanel");
@@ -889,10 +896,15 @@
 
     function updateProjectFilter(sessions) {
       const projects = [...new Set(sessions.map((s) => s.project || "Non identificato"))].sort();
+      state.availableProjects = projects;
       const current = state.projectFilter;
+      const query = state.projectSearch.trim().toLocaleLowerCase("it-IT");
+      const visibleProjects = query
+        ? projects.filter((project) => project.toLocaleLowerCase("it-IT").includes(query))
+        : projects;
       projectFilterEl.innerHTML = `<option value="*">Tutti i progetti</option>` +
-        projects.map((project) => `<option value="${project}">${project}</option>`).join("");
-      state.projectFilter = projects.includes(current) || current === "*" ? current : "*";
+        visibleProjects.map((project) => `<option value="${project}">${project}</option>`).join("");
+      state.projectFilter = visibleProjects.includes(current) || current === "*" ? current : "*";
       projectFilterEl.value = state.projectFilter;
     }
 
@@ -1371,6 +1383,9 @@
     refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
     document.getElementById("applyFilters").addEventListener("click", render);
     projectFilterEl.addEventListener("change", () => { state.projectFilter = projectFilterEl.value; render(); });
+    projectSearchEl.addEventListener("input", () => {
+      updateProjectFilter(sessionsInRange());
+    });
     aicValueEl.addEventListener("change", render);
     autoRefreshEnabledEl.addEventListener("change", startAutoRefresh);
     refreshIntervalEl.addEventListener("change", startAutoRefresh);
