@@ -6,7 +6,7 @@ const xlsx = require("xlsx");
 const { createControllers } = require("./http/controllers");
 const { createRouter } = require("./http/router");
 const { sessionCatalog } = require("./infrastructure/session-discovery");
-const { closeCopilotDatabases } = require("./infrastructure/copilot-store");
+const { closeCopilotDatabases } = require("./adapters/copilot-app/store");
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
