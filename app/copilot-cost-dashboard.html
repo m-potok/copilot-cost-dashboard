@@ -112,6 +112,49 @@
       gap: 10px;
     }
 
+    .config-group {
+      display: grid;
+      gap: 8px;
+      padding-top: 2px;
+    }
+
+    .config-group + .config-group {
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+
+    .config-group-title {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 750;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .config-row {
+      display: grid;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .config-row.source {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .config-row.sync {
+      grid-template-columns: minmax(180px, 260px) auto;
+    }
+
+    .config-row .path {
+      min-width: 0;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .btn {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -552,7 +595,21 @@
 
     @media (max-width: 980px) {
       .grid2 { grid-template-columns: 1fr; }
-      .field.path { min-width: 100%; }
+    }
+
+    @media (max-width: 680px) {
+      .config-row.source,
+      .config-row.sync {
+        grid-template-columns: 1fr;
+      }
+
+      .button-group {
+        width: 100%;
+      }
+
+      .button-group .btn {
+        flex: 1 1 auto;
+      }
     }
   </style>
 </head>
@@ -569,22 +626,37 @@
       <details id="configPanel" class="config-panel">
         <summary>Configurazioni</summary>
         <div class="config-body">
-          <div class="inputs">
-            <div class="field path" style="min-width:460px; flex:1 1 460px;">
-              <label for="rootPath">Cartella dei log</label>
-              <input id="rootPath" type="text" placeholder="C:\\Users\\...\\AppData\\Roaming\\Code\\User\\workspaceStorage" />
+          <div class="config-group">
+            <div class="config-group-title">Sorgente dati</div>
+            <div class="config-row source">
+              <div class="field path">
+                <label for="rootPath">Cartella dei log</label>
+                <input id="rootPath" type="text" placeholder="C:\\Users\\...\\AppData\\Roaming\\Code\\User\\workspaceStorage" />
+              </div>
+              <div class="button-group">
+                <button id="pickRoot" class="btn" type="button">Scegli cartella</button>
+                <button id="applyPath" class="btn primary" type="button">Applica percorso</button>
+              </div>
             </div>
-            <button id="pickRoot" class="btn" type="button">Scegli cartella</button>
-            <button id="applyPath" class="btn primary" type="button">Applica percorso</button>
+          </div>
+
+          <div class="config-group">
+            <div class="config-group-title">Calcolo costi</div>
             <div class="field">
               <label for="aicValue">Valore AIC (€)</label>
               <input id="aicValue" type="number" step="0.0001" min="0" value="0.01" />
             </div>
-            <div class="field">
-              <label for="syncIntervalSeconds">Frequenza sincronizzazione (secondi)</label>
-              <input id="syncIntervalSeconds" type="number" min="1" max="86400" step="1" value="60" />
+          </div>
+
+          <div class="config-group">
+            <div class="config-group-title">Sincronizzazione</div>
+            <div class="config-row sync">
+              <div class="field">
+                <label for="syncIntervalSeconds">Frequenza (secondi)</label>
+                <input id="syncIntervalSeconds" type="number" min="1" max="86400" step="1" value="60" />
+              </div>
+              <button id="applySyncInterval" class="btn" type="button">Applica frequenza</button>
             </div>
-            <button id="applySyncInterval" class="btn" type="button">Applica frequenza</button>
           </div>
         </div>
       </details>
