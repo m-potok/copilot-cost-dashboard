@@ -1,0 +1,1 @@
+{"timeline":{"operations":[{"requestId":"request-1","epoch":1,"type":"create","uri":{"fsPath":"C:\\Users\\example\\project-a\\src\\fixture.js"},"initialContent":"const fixture = true;\n"}],"checkpoints":[]},"recentSnapshot":{"entries":[{"resource":"C:\\Users\\example\\project-a\\src\\fixture.js","state":1,"telemetryInfo":{"requestId":"request-1"}}]}}

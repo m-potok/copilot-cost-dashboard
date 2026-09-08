@@ -11,7 +11,7 @@ Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
 
 ### 1. Requisiti
 
-- **Node.js** (versione 14+): [Scarica da nodejs.org](https://nodejs.org/)
+- **Node.js** (versione 18+): [Scarica da nodejs.org](https://nodejs.org/)
   - Durante l'installazione, assicurati di spuntare "Add to PATH"
 
 ### 2. Avvio
@@ -24,6 +24,25 @@ node app/copilot-cost-dashboard-server.js
 ```
 
 Poi apri nel browser: **http://127.0.0.1:4781**
+
+### Test
+
+Esegui i test caratterizzanti e gli smoke test API con:
+
+```bash
+npm ci
+npm test
+```
+
+Per misurare discovery e refresh incrementale sul dataset fixture:
+
+```bash
+npm run benchmark
+```
+
+Le soglie predefinite sono 1000 ms per la scansione iniziale e 1000 ms per
+il refresh. Possono essere sovrascritte con `BENCHMARK_MAX_INITIAL_MS` e
+`BENCHMARK_MAX_REFRESH_MS`.
 
 ## Uso
 

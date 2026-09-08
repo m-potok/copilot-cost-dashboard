@@ -5,14 +5,30 @@ const os = require("os");
 const { spawn } = require("child_process");
 const { URL } = require("url");
 const xlsx = require("xlsx");
-const Database = require("better-sqlite3");
+const { SessionCatalog } = require("./application/session-catalog");
+const { createExcelBuffer } = require("./infrastructure/excel-exporter");
+const { exists, safeReadText, statSafe } = require("./infrastructure/fs-reader");
+const { buildModelPriceMap, getPriceForModel, calculateTurnAic } = require("./domain/pricing");
+const { SessionSource } = require("./domain/session-source");
+let Database = null;
+
+function getDatabase() {
+  if (!Database) Database = require("better-sqlite3");
+  return Database;
+}
+
+function closeCopilotDatabases() {
+  for (const db of copilotDbHandles.values()) {
+    if (db && db.open) db.close();
+  }
+  copilotDbHandles.clear();
+}
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
-const AUTO_AIC_DISCOUNT_FACTOR = 0.9;
 const BASE_DIR = __dirname;
 const DASHBOARD_FILE = path.join(BASE_DIR, "copilot-cost-dashboard.html");
-const rootCaches = new Map();
+const API_CLIENT_FILE = path.join(BASE_DIR, "frontend", "api-client.js");
 const copilotDbHandles = new Map();
 let hasLoggedFirstRequest = false;
 
@@ -37,23 +53,6 @@ function getDefaultRoot() {
   return os.homedir();
 }
 
-async function exists(targetPath) {
-  try {
-    await fs.access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function safeReadText(filePath) {
-  try {
-    return await fs.readFile(filePath, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 function parseJsonl(text) {
   if (!text) return [];
   const rows = [];
@@ -69,45 +68,6 @@ function parseJsonl(text) {
   return rows;
 }
 
-function buildModelPriceMap(modelsText) {
-  const map = new Map();
-  if (!modelsText) return map;
-  try {
-    const data = JSON.parse(modelsText);
-    if (!Array.isArray(data)) return map;
-    for (const item of data) {
-      const prices = item && item.billing && item.billing.token_prices && item.billing.token_prices.default;
-      const multiplier = Number((item && item.billing && item.billing.multiplier) || 0);
-      if (!item || !item.id) continue;
-
-      let normalized = null;
-      if (prices) {
-        normalized = {
-          input_price: Number(prices.input_price || 0),
-          output_price: Number(prices.output_price || 0),
-          cache_price: Number(prices.cache_price || 0)
-        };
-      } else if (Number.isFinite(multiplier) && multiplier > 0) {
-        // Newer model catalogs expose a multiplier instead of token_prices.
-        // Use multiplier as a pragmatic fallback to keep AIC/EUR non-zero.
-        normalized = {
-          input_price: multiplier,
-          output_price: multiplier,
-          cache_price: multiplier
-        };
-      }
-
-      if (!normalized) continue;
-      map.set(String(item.id), normalized);
-      if (item.version) map.set(String(item.version), normalized);
-      if (item.name) map.set(String(item.name), normalized);
-    }
-  } catch {
-    return map;
-  }
-  return map;
-}
-
 function deriveModelId(row) {
   const attrsModel = row && row.attrs && row.attrs.model;
   if (attrsModel) return String(attrsModel);
@@ -115,17 +75,6 @@ function deriveModelId(row) {
   const match = name.match(/^chat:(.+)$/);
   if (match) return match[1];
   return "unknown";
-}
-
-function getPriceForModel(priceMap, modelId) {
-  if (priceMap.has(modelId)) return priceMap.get(modelId);
-
-  const target = String(modelId || "").toLowerCase();
-  for (const [k, v] of priceMap.entries()) {
-    const source = String(k || "").toLowerCase();
-    if (source.includes(target) || target.includes(source)) return v;
-  }
-  return null;
 }
 
 function extractChatSessionTurns(chatSessionText) {
@@ -260,10 +209,9 @@ function buildSessionFromFallbackTurns(sessionId, baseSummary, turns, priceMap) 
     cachedTokens += cached;
 
     const prices = getPriceForModel(priceMap, modelId);
-    let turnAic = 0;
-    if (prices) {
-      turnAic = ((input * prices.input_price) + (cached * prices.cache_price) + (output * prices.output_price)) / 1000000;
-    } else {
+    const turnPricing = calculateTurnAic(input, cached, output, prices);
+    const turnAic = turnPricing.aic;
+    if (!prices) {
       missingPriceTurns += 1;
     }
     aic += turnAic;
@@ -407,17 +355,14 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
       cachedTokens += cached;
 
       const prices = getPriceForModel(priceMap, modelId);
-      let turnAic = 0;
-      if (prices) {
-        const rawAic = ((uncached * prices.input_price) + (cached * prices.cache_price) + (output * prices.output_price)) / 1000000;
-        if (isAutoModelRequest(row)) {
-          autoDiscountTurns += 1;
-          autoDiscountAmount += rawAic * (1 - AUTO_AIC_DISCOUNT_FACTOR);
-          turnAic = rawAic * AUTO_AIC_DISCOUNT_FACTOR;
-        } else {
-          turnAic = rawAic;
-        }
-      } else {
+      const discounted = isAutoModelRequest(row);
+      const turnPricing = calculateTurnAic(input, cached, output, prices, discounted);
+      const turnAic = turnPricing.aic;
+      if (prices && discounted) {
+        autoDiscountTurns += 1;
+        autoDiscountAmount += turnPricing.discountedAmount;
+      }
+      if (!prices) {
         missingPriceTurns += 1;
       }
       aic += turnAic;
@@ -449,14 +394,6 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
     autoDiscountAmount,
     modelAgg: [...modelAgg.values()].sort((a, b) => b.aic - a.aic)
   };
-}
-
-async function statSafe(filePath) {
-  try {
-    return await fs.stat(filePath);
-  } catch {
-    return null;
-  }
 }
 
 function decodeFileUri(value) {
@@ -965,7 +902,7 @@ function readCopilotSessionInfo(sessionId) {
   try {
     let db = copilotDbHandles.get(dbPath);
     if (!db) {
-      db = new Database(dbPath, { readonly: true, fileMustExist: true });
+      db = new (getDatabase())(dbPath, { readonly: true, fileMustExist: true });
       copilotDbHandles.set(dbPath, db);
     }
     return db.prepare("SELECT repository, cwd FROM sessions WHERE id = ?").get(sessionId) || null;
@@ -979,7 +916,7 @@ function readCopilotStoreUsage(sessionId) {
   try {
     let db = copilotDbHandles.get(dbPath);
     if (!db) {
-      db = new Database(dbPath, { readonly: true, fileMustExist: true });
+      db = new (getDatabase())(dbPath, { readonly: true, fileMustExist: true });
       copilotDbHandles.set(dbPath, db);
     }
 
@@ -1120,7 +1057,12 @@ async function buildStateFingerprint(sessionDir) {
   ].join("|");
 }
 
-async function refreshSessionsFromRoot(rootPath) {
+const sessionSources = new Map([
+  ["debug", new SessionSource("debug", readSessionFromDirectory, buildSessionFingerprint)],
+  ["state", new SessionSource("state", readSessionFromStateDirectory, buildStateFingerprint)]
+]);
+
+async function refreshSessionsFromRoot(rootPath, cacheStore = new Map()) {
   const resolvedRoot = path.resolve(rootPath);
   if (!(await exists(resolvedRoot))) {
     throw new Error(`Percorso non trovato: ${resolvedRoot}`);
@@ -1135,7 +1077,7 @@ async function refreshSessionsFromRoot(rootPath) {
       : path.join(resolvedRoot, ".copilot", "session-state"));
   const hasStateRoot = await exists(stateRoot);
   if (!debugDirs.length && !hasStateRoot) {
-    rootCaches.set(resolvedRoot, {
+    cacheStore.set(resolvedRoot, {
       sessionsById: new Map(),
       fingerprints: new Map(),
       lastSyncTs: Date.now()
@@ -1152,7 +1094,7 @@ async function refreshSessionsFromRoot(rootPath) {
     };
   }
 
-  const cache = rootCaches.get(resolvedRoot) || {
+  const cache = cacheStore.get(resolvedRoot) || {
     sessionsById: new Map(),
     fingerprints: new Map(),
     lastSyncTs: 0
@@ -1194,9 +1136,9 @@ async function refreshSessionsFromRoot(rootPath) {
 
   for (const [sessionId, source] of discovered.entries()) {
     const sessionDir = source.dir;
-    const fingerprint = source.kind === "state"
-      ? await buildStateFingerprint(sessionDir)
-      : await buildSessionFingerprint(sessionDir);
+    const adapter = sessionSources.get(source.kind);
+    if (!adapter) continue;
+    const fingerprint = await adapter.fingerprint(sessionDir);
     if (!fingerprint) continue;
 
     const prevFingerprint = cache.fingerprints.get(sessionId);
@@ -1205,9 +1147,7 @@ async function refreshSessionsFromRoot(rootPath) {
       continue;
     }
 
-    const analyzed = source.kind === "state"
-      ? await readSessionFromStateDirectory(sessionDir, sessionId)
-      : await readSessionFromDirectory(sessionDir, sessionId);
+    const analyzed = await adapter.read(sessionDir, sessionId);
     if (!analyzed) {
       cache.sessionsById.delete(sessionId);
       cache.fingerprints.delete(sessionId);
@@ -1230,7 +1170,7 @@ async function refreshSessionsFromRoot(rootPath) {
   const sessions = [...cache.sessionsById.values()].sort((a, b) => (a.startTs || 0) - (b.startTs || 0));
   const fullRebuild = cache.lastSyncTs === 0;
   cache.lastSyncTs = Date.now();
-  rootCaches.set(resolvedRoot, cache);
+  cacheStore.set(resolvedRoot, cache);
 
   return {
     root: resolvedRoot,
@@ -1243,6 +1183,10 @@ async function refreshSessionsFromRoot(rootPath) {
     lastSyncTs: cache.lastSyncTs
   };
 }
+
+const sessionCatalog = new SessionCatalog((rootPath, cacheStore) =>
+  refreshSessionsFromRoot(rootPath, cacheStore)
+);
 
 async function findDebugLogsDirectories(rootPath) {
   const resolved = path.resolve(rootPath);
@@ -1310,7 +1254,7 @@ async function findDebugLogsDirectories(rootPath) {
 }
 
 async function readSessionsFromRoot(rootPath) {
-  const refreshed = await refreshSessionsFromRoot(rootPath);
+  const refreshed = await sessionCatalog.read(rootPath);
   return {
     root: refreshed.root,
     inspectedFolders: refreshed.inspectedFolders,
@@ -1413,11 +1357,23 @@ async function serveDashboard(res) {
     res.end("Dashboard file not found.");
     return;
   }
+
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store"
   });
   res.end(html);
+}
+
+async function serveApiClient(res) {
+  const script = await safeReadText(API_CLIENT_FILE);
+  if (!script) {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("API client file not found.");
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(script);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1431,6 +1387,11 @@ const server = http.createServer(async (req, res) => {
 
     if (reqUrl.pathname === "/") {
       await serveDashboard(res);
+      return;
+    }
+
+    if (reqUrl.pathname === "/api-client.js") {
+      await serveApiClient(res);
       return;
     }
 
@@ -1450,6 +1411,8 @@ const server = http.createServer(async (req, res) => {
           canceled: !selectedPath,
           path: selectedPath || null
         });
+
+        server.on("close", closeCopilotDatabases);
       } catch (error) {
         sendJson(res, 400, { error: error.message || "Errore apertura folder picker." });
       }
@@ -1470,7 +1433,7 @@ const server = http.createServer(async (req, res) => {
     if (reqUrl.pathname === "/api/sessions-delta") {
       const root = reqUrl.searchParams.get("root") || getDefaultRoot();
       try {
-        const payload = await refreshSessionsFromRoot(root);
+        const payload = await sessionCatalog.read(root);
         sendJson(res, 200, {
           root: payload.root,
           inspectedFolders: payload.inspectedFolders,
@@ -1499,56 +1462,7 @@ const server = http.createServer(async (req, res) => {
           const payload = JSON.parse(body);
           const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
           const aicValueEuro = Number(payload.aicValueEuro || 0.01);
-          const rows = sessions.map((s) => ({
-            Titolo: s.title || "(non disponibile)",
-            "ID Sessione": s.sessionId,
-            Progetto: s.project || "Non identificato",
-            "Percorso Progetto": s.projectPath || "",
-            "Data Inizio": new Date(s.startTs || 0).toLocaleString("it-IT"),
-            "Model Turns": s.modelTurns || 0,
-            "Auto Turns": s.autoDiscountTurns || 0,
-            "Tool Calls": s.toolCalls || 0,
-            "Input Tokens": s.inputTokens || 0,
-            Cached: s.cachedTokens || 0,
-            Output: s.outputTokens || 0,
-            Total: s.totalTokens || 0,
-            Errors: s.errors || 0,
-            AIC: Number((s.aic || 0).toFixed(4)),
-            "Sconto Auto AIC": Number((s.autoDiscountAmount || 0).toFixed(4)),
-            EUR: Number((s.aic * aicValueEuro).toFixed(4))
-          }));
-          const ws = xlsx.utils.json_to_sheet(rows);
-          ws["!cols"] = [ { wch: 25 }, { wch: 40 }, { wch: 24 }, { wch: 45 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 12 } ];
-          const wb = xlsx.utils.book_new();
-          xlsx.utils.book_append_sheet(wb, ws, "Sessioni");
-          const projects = new Map();
-          for (const s of sessions) {
-            const key = s.project || "Non identificato";
-            const editing = s.editing || {};
-            const current = projects.get(key) || {
-              Progetto: key, Sessioni: 0, "Model Turns": 0, "Input Tokens": 0, "Output Tokens": 0,
-              AIC: 0, "Costo (EUR)": 0, "File modificati": 0, "Righe aggiunte accettate": 0,
-              "Righe rimosse accettate": 0, "Righe aggiunte rifiutate": 0, "Righe rimosse rifiutate": 0,
-              "Righe aggiunte manuali": 0, "Righe rimosse manuali": 0, "Righe non classificate": 0
-            };
-            current.Sessioni += 1;
-            current["Model Turns"] += s.modelTurns || 0;
-            current["Input Tokens"] += s.inputTokens || 0;
-            current["Output Tokens"] += s.outputTokens || 0;
-            current.AIC += s.aic || 0;
-            current["Costo (EUR)"] += (s.aic || 0) * aicValueEuro;
-            current["File modificati"] += editing.files || 0;
-            current["Righe aggiunte accettate"] += editing.addedAccepted || 0;
-            current["Righe rimosse accettate"] += editing.removedAccepted || 0;
-            current["Righe aggiunte rifiutate"] += editing.addedRejected || 0;
-            current["Righe rimosse rifiutate"] += editing.removedRejected || 0;
-            current["Righe aggiunte manuali"] += editing.addedManual || 0;
-            current["Righe rimosse manuali"] += editing.removedManual || 0;
-            current["Righe non classificate"] += (editing.addedInferred || 0) + (editing.removedInferred || 0);
-            projects.set(key, current);
-          }
-          xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet([...projects.values()]), "Progetti");
-          const excelBuffer = xlsx.write(wb, { bookType: "xlsx", type: "buffer" });
+          const excelBuffer = createExcelBuffer(xlsx, sessions, aicValueEuro);
           res.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": "attachment; filename=copilot-sessions.xlsx", "Content-Length": excelBuffer.length });
           res.end(excelBuffer);
         } catch (error) {
@@ -1564,24 +1478,46 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
-  const dashboardUrl = `http://${HOST}:${PORT}`;
-  logTitle("============================================================");
-  logTitle(" Copilot Cost Dashboard");
-  logTitle("============================================================");
-  logSuccess(`Copilot Cost Dashboard server running on ${dashboardUrl}`);
-  logInfo(`Default root: ${getDefaultRoot()}`);
-  logSuccess("Status: READY");
-  logInfo("Press CTRL+C to stop the server.");
+function startServer() {
+  server.listen(PORT, HOST, () => {
+    const dashboardUrl = `http://${HOST}:${PORT}`;
+    logTitle("============================================================");
+    logTitle(" Copilot Cost Dashboard");
+    logTitle("============================================================");
+    logSuccess(`Copilot Cost Dashboard server running on ${dashboardUrl}`);
+    logInfo(`Default root: ${getDefaultRoot()}`);
+    logSuccess("Status: READY");
+    logInfo("Press CTRL+C to stop the server.");
 
-  const shouldAutoOpen = process.env.NO_AUTO_OPEN_BROWSER !== "1";
-  if (shouldAutoOpen) {
-    const opened = openBrowser(dashboardUrl);
-    if (opened) {
-      logSuccess(`[INFO] Browser opened automatically: ${dashboardUrl}`);
+    const shouldAutoOpen = process.env.NO_AUTO_OPEN_BROWSER !== "1";
+    if (shouldAutoOpen) {
+      const opened = openBrowser(dashboardUrl);
+      if (opened) {
+        logSuccess(`[INFO] Browser opened automatically: ${dashboardUrl}`);
+      }
+      if (!opened) {
+        logInfo(`Open browser manually: ${dashboardUrl}`);
+      }
     }
-    if (!opened) {
-      logInfo(`Open browser manually: ${dashboardUrl}`);
-    }
-  }
-});
+  });
+}
+
+module.exports = {
+  server,
+  sessionCatalog,
+  createExcelBuffer,
+  closeCopilotDatabases,
+  startServer,
+  parseJsonl,
+  buildModelPriceMap,
+  extractChatSessionTurns,
+  buildSessionFromFallbackTurns,
+  analyzeSession,
+  summarizeEditingOperations,
+  readSessionsFromRoot,
+  refreshSessionsFromRoot
+};
+
+if (require.main === module) {
+  startServer();
+}

@@ -598,10 +598,6 @@
                 <option value="*">Tutti i progetti</option>
               </select>
             </div>
-            <div class="field">
-              <label for="projectSearch">Cerca progetto</label>
-              <input id="projectSearch" type="search" placeholder="Nome progetto..." autocomplete="off" />
-            </div>
             <button id="applyFilters" class="btn" type="button">Applica filtri</button>
           </div>
         </div>
@@ -718,11 +714,11 @@
     </div>
   </div>
 
+  <script src="api-client.js"></script>
   <script>
     const state = {
       sessions: [],
       projectFilter: "*",
-      projectSearch: "",
       availableProjects: [],
       selectedRootPath: "",
       activePreset: "day"
@@ -734,7 +730,6 @@
     const sessionsBodyEl = document.getElementById("sessionsBody");
     const projectsBodyEl = document.getElementById("projectsBody");
     const projectFilterEl = document.getElementById("projectFilter");
-    const projectSearchEl = document.getElementById("projectSearch");
     const loadedCountEl = document.getElementById("loadedCount");
     const statusEl = document.getElementById("status");
     const configPanelEl = document.getElementById("configPanel");
@@ -758,6 +753,8 @@
 
     let autoRefreshTimer = null;
     let refreshInFlight = false;
+    let refreshAbortController = null;
+    let loadAbortController = null;
 
     const presetButtons = {
       day: document.getElementById("presetDay"),
@@ -894,25 +891,30 @@
       return [...agg.values()].map((row) => ({ ...row, euro: row.aic * aicValueEuro })).sort((a, b) => b.aic - a.aic);
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
     function updateProjectFilter(sessions) {
       const projects = [...new Set(sessions.map((s) => s.project || "Non identificato"))].sort();
       state.availableProjects = projects;
       const current = state.projectFilter;
-      const query = state.projectSearch.trim().toLocaleLowerCase("it-IT");
-      const visibleProjects = query
-        ? projects.filter((project) => project.toLocaleLowerCase("it-IT").includes(query))
-        : projects;
       projectFilterEl.innerHTML = `<option value="*">Tutti i progetti</option>` +
-        visibleProjects.map((project) => `<option value="${project}">${project}</option>`).join("");
-      state.projectFilter = visibleProjects.includes(current) || current === "*" ? current : "*";
+        projects.map((project) => `<option value="${escapeHtml(project)}">${escapeHtml(project)}</option>`).join("");
+      state.projectFilter = projects.includes(current) || current === "*" ? current : "*";
       projectFilterEl.value = state.projectFilter;
     }
 
     function renderProjects(sessions, aicValueEuro) {
       const rows = aggregateProjects(sessions, aicValueEuro);
       projectsBodyEl.innerHTML = rows.length ? rows.map((r) => `
-        <tr data-project="${r.project}" style="cursor:pointer">
-          <td>${r.project}</td><td class="num">${fmtInt(r.sessions)}</td><td class="num">${fmtInt(r.tokens)}</td>
+        <tr data-project="${escapeHtml(r.project)}" style="cursor:pointer">
+          <td>${escapeHtml(r.project)}</td><td class="num">${fmtInt(r.sessions)}</td><td class="num">${fmtInt(r.tokens)}</td>
           <td class="num">${fmtNum(r.aic, 4)}</td><td class="num">${fmtInt(r.files)}</td>
           <td class="num">${fmtInt(r.addedAccepted)}</td><td class="num">${fmtInt(r.removedAccepted)}</td>
           <td class="num">${fmtInt(r.addedRejected)}</td><td class="num">${fmtInt(r.removedRejected)}</td>
@@ -1067,7 +1069,7 @@
         return `
           <div class="bar-row">
             <div class="bar-head">
-              <span>${labelBuilder(row)}</span>
+              <span>${escapeHtml(labelBuilder(row))}</span>
               <span>${valueBuilder(row)}</span>
             </div>
             <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
@@ -1090,11 +1092,11 @@
           <tr>
             <td>
               <div class="session-main">
-                <div class="session-title" title="${safeTitle}">${safeTitle}</div>
-                <div class="session-id mono">${s.sessionId}</div>
+                <div class="session-title" title="${escapeHtml(safeTitle)}">${escapeHtml(safeTitle)}</div>
+                <div class="session-id mono">${escapeHtml(s.sessionId)}</div>
               </div>
             </td>
-            <td>${s.project || "Non identificato"}${s.projectSource === "unidentified" ? " (inferito)" : ""}</td>
+            <td>${escapeHtml(s.project || "Non identificato")}${s.projectSource === "unidentified" ? " (inferito)" : ""}</td>
             <td>${fmtDate(s.startTs)}</td>
             <td class="num">${fmtInt(s.modelTurns)}</td>
             <td class="num">${fmtInt(s.toolCalls)}</td>
@@ -1164,7 +1166,7 @@
       } else {
         detailModelsBodyEl.innerHTML = modelRows.map((m) => `
           <tr>
-            <td class="mono">${m.model}</td>
+            <td class="mono">${escapeHtml(m.model)}</td>
             <td class="num">${fmtInt(m.turns)}</td>
             <td class="num">${fmtNum(m.aic, 4)}</td>
             <td class="num">${fmtEuro(m.aic * aicValueEuro)}</td>
@@ -1174,9 +1176,9 @@
       const details = Array.isArray(editing.details) ? editing.details : [];
       detailEditingBodyEl.innerHTML = details.length
         ? details.flatMap((file) => file.statuses.map((change) => `
-          <tr><td class="mono">${file.file}</td><td>${change.status === "inferred" ? "Non classificata (fallback)" : change.status}</td>
-          <td>${change.operation}</td><td class="num">${fmtInt(change.added)}</td><td class="num">${fmtInt(change.removed)}</td>
-          <td class="mono">${change.requestId || "-"} / ${change.epoch ?? "-"}</td></tr>`)).join("")
+          <tr><td class="mono">${escapeHtml(file.file)}</td><td>${escapeHtml(change.status === "inferred" ? "Non classificata (fallback)" : change.status)}</td>
+          <td>${escapeHtml(change.operation)}</td><td class="num">${fmtInt(change.added)}</td><td class="num">${fmtInt(change.removed)}</td>
+          <td class="mono">${escapeHtml(`${change.requestId || "-"} / ${change.epoch ?? "-"}`)}</td></tr>`)).join("")
         : `<tr><td colspan="6">Nessuna modifica codice disponibile.</td></tr>`;
 
       detailModalEl.classList.remove("hidden");
@@ -1234,15 +1236,17 @@
       if (!root || refreshInFlight) return;
 
       refreshInFlight = true;
+      refreshAbortController = new AbortController();
       try {
-        const payload = await fetchJson(`/api/sessions-delta?root=${encodeURIComponent(root)}`);
+        const payload = await dashboardApi.getSessionsDelta(root, refreshAbortController.signal);
         applyDeltaPayload(payload, { silent });
       } catch (error) {
-        if (!silent) {
+        if (error.name !== "AbortError" && !silent) {
           setStatus(`Errore aggiornamento automatico: ${error.message}`, true);
         }
       } finally {
         refreshInFlight = false;
+        refreshAbortController = null;
       }
     }
 
@@ -1286,13 +1290,6 @@
       }
     }
 
-    async function fetchJson(url, options) {
-      const response = await fetch(url, options);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      return data;
-    }
-
     async function loadFromPath(pathValue) {
       const root = String(pathValue || "").trim();
       if (!root) {
@@ -1301,8 +1298,10 @@
       }
       setLoading(true, "Caricamento iniziale sessioni in corso...");
       setStatus(`Lettura in corso da ${root}...`);
+      if (loadAbortController) loadAbortController.abort();
+      loadAbortController = new AbortController();
       try {
-        const payload = await fetchJson(`/api/sessions?root=${encodeURIComponent(root)}`);
+        const payload = await dashboardApi.getSessions(root, loadAbortController.signal);
         state.sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
         state.selectedRootPath = payload.root || root;
         rootPathEl.value = state.selectedRootPath;
@@ -1311,8 +1310,9 @@
         setStatus(`Dati caricati da ${state.selectedRootPath}. Sessioni disponibili: ${state.sessions.length}.`);
         startAutoRefresh();
       } catch (error) {
-        setStatus(`Errore caricamento: ${error.message}`, true);
+        if (error.name !== "AbortError") setStatus(`Errore caricamento: ${error.message}`, true);
       } finally {
+        loadAbortController = null;
         setLoading(false);
       }
     }
@@ -1320,7 +1320,7 @@
     async function loadDefaultPath() {
       setStatus("Recupero percorso standard...", false);
       try {
-        const payload = await fetchJson("/api/default-root");
+        const payload = await dashboardApi.getDefaultRoot();
         rootPathEl.value = payload.root || "";
         await loadFromPath(rootPathEl.value);
       } catch (error) {
@@ -1331,7 +1331,7 @@
     async function pickRootPath() {
       setStatus("Apertura selettore cartella...", false);
       try {
-        const payload = await fetchJson("/api/pick-root", { method: "POST" });
+        const payload = await dashboardApi.pickRoot();
         if (payload.canceled || !payload.path) {
           setStatus("Selezione cartella annullata.");
           return;
@@ -1352,11 +1352,7 @@
       }
       setLoading(true, "Generazione file Excel...");
       try {
-        const response = await fetch("/api/export-excel", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessions: sessions, aicValueEuro: aicValueEuro })
-        });
+        const response = await dashboardApi.exportExcel(sessions, aicValueEuro);
         if (!response.ok) throw new Error("HTTP " + response.status);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -1383,9 +1379,6 @@
     refreshNowBtn.addEventListener("click", () => refreshDelta({ silent: false }));
     document.getElementById("applyFilters").addEventListener("click", render);
     projectFilterEl.addEventListener("change", () => { state.projectFilter = projectFilterEl.value; render(); });
-    projectSearchEl.addEventListener("input", () => {
-      updateProjectFilter(sessionsInRange());
-    });
     aicValueEl.addEventListener("change", render);
     autoRefreshEnabledEl.addEventListener("change", startAutoRefresh);
     refreshIntervalEl.addEventListener("change", startAutoRefresh);

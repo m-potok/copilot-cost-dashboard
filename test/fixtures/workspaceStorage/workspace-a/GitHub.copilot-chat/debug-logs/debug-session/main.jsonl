@@ -1,0 +1,4 @@
+{"type":"session_start","ts":1700000000000}
+{"type":"llm_request","ts":1700000001000,"attrs":{"model":"gpt-test","inputTokens":100,"cachedTokens":20,"outputTokens":40}}
+{"type":"tool_call","ts":1700000002000}
+{"type":"tool_result","ts":1700000003000,"status":"error"}

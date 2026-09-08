@@ -1,0 +1,3 @@
+{"type":"session.start","timestamp":"2023-11-14T22:13:20.000Z","data":{"selectedModel":"gpt-state","startTime":"2023-11-14T22:13:20.000Z"}}
+{"type":"assistant.message","timestamp":"2023-11-14T22:13:21.000Z","data":{"outputTokens":12}}
+{"type":"session.shutdown","timestamp":"2023-11-14T22:13:22.000Z","data":{"totalNanoAiu":250000000,"modelMetrics":{"gpt-state":{"requests":{"count":2},"usage":{"inputTokens":80,"outputTokens":12,"cacheReadTokens":10},"totalNanoAiu":250000000}}}}
