@@ -391,6 +391,23 @@
 
     .status.warn { color: var(--danger); font-weight: 700; }
 
+    .sync-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sync-status.syncing::before {
+      content: "";
+      width: 12px;
+      height: 12px;
+      border: 2px solid #dbe8f2;
+      border-top-color: var(--accent);
+      border-radius: 999px;
+      animation: spin 0.9s linear infinite;
+      flex: 0 0 auto;
+    }
+
     .header-actions { justify-content: flex-end; }
 
     .disclaimer {
@@ -704,7 +721,7 @@
       </div>
 
       <div id="status" class="status hidden" aria-live="polite"></div>
-      <div id="syncStatus" class="status">Sorgente: SQLite · Sync in attesa...</div>
+      <div id="syncStatus" class="status sync-status" role="status" aria-live="polite" aria-atomic="true">Sorgente: SQLite · Sync in attesa...</div>
       <div class="disclaimer">
         Disclaimer: i valori mostrati sono indicativi e non rappresentano il costo finale effettivo di fatturazione.
       </div>
@@ -938,7 +955,8 @@
       const rootStatus = root ? `${root.status || "registered"}${root.lastSuccessAt ? ` · ultima ${fmtDate(root.lastSuccessAt)}` : ""}` : "in attesa";
       const error = root && root.error ? ` · errore: ${root.error}` : "";
       syncStatusEl.textContent = `Sorgente: SQLite · Sync: ${rootStatus} · intervallo ${interval || "-"}s${error}`;
-      syncStatusEl.className = root && root.error ? "status warn" : "status";
+      syncStatusEl.className = `status sync-status${root && root.status === "syncing" ? " syncing" : ""}${root && root.error ? " warn" : ""}`;
+      syncStatusEl.setAttribute("aria-busy", root && root.status === "syncing" ? "true" : "false");
       if (interval) syncIntervalSecondsEl.value = interval;
     }
 
@@ -1416,15 +1434,18 @@
 
     function clearAutoRefreshTimer() {
       if (!autoRefreshTimer) return;
-      clearInterval(autoRefreshTimer);
+      clearTimeout(autoRefreshTimer);
       autoRefreshTimer = null;
     }
 
     function startAutoRefresh() {
       clearAutoRefreshTimer();
-      const intervalMs = 30 * 1000;
-      autoRefreshTimer = setInterval(() => {
-        refreshDelta({ silent: true });
+      const isSyncing = state.syncStatus && state.syncStatus.root &&
+        state.syncStatus.root.status === "syncing";
+      const intervalMs = isSyncing ? 1000 : 30 * 1000;
+      autoRefreshTimer = setTimeout(async () => {
+        await refreshDelta({ silent: true });
+        startAutoRefresh();
       }, intervalMs);
     }
 
@@ -1522,7 +1543,6 @@
         setStatus("Percorso root vuoto.", true);
         return;
       }
-      setLoading(true, "Caricamento iniziale sessioni in corso...");
       setStatus(`Lettura in corso da ${root}...`);
       if (loadAbortController) loadAbortController.abort();
       loadAbortController = new AbortController();
@@ -1540,7 +1560,6 @@
         if (error.name !== "AbortError") setStatus(`Errore caricamento: ${error.message}`, true);
       } finally {
         loadAbortController = null;
-        setLoading(false);
       }
     }
 

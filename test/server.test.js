@@ -130,8 +130,16 @@ test("serves API smoke endpoints", async (t) => {
   assert.equal(exported.body.slice(0, 2), "PK");
 });
 
-test("waits for the first root sync before returning sessions", async () => {
+test("returns cached sessions while the first root sync runs in background", async () => {
   let synced = false;
+  let syncStarted = false;
+  let releaseSync;
+  const syncPromise = new Promise((resolve) => {
+    releaseSync = () => {
+      synced = true;
+      resolve();
+    };
+  });
   const root = path.resolve("fixture-root");
   const controllers = createControllers({
     dashboardFile: "",
@@ -139,13 +147,16 @@ test("waits for the first root sync before returning sessions", async () => {
     sessionCatalog: null,
     sessionRepository: {
       registerRoot: () => root,
-      getSessions: () => synced ? [{ sessionId: "initial" }] : [],
+      getSessions: () => [{ sessionId: "cached" }],
       getRoots: () => []
     },
     syncService: {
       registerRoot: () => root,
       getStatus: () => ({ root: { status: synced ? "ready" : "registered", inspectedFolders: 1 } }),
-      syncRoot: async () => { synced = true; }
+      syncRoot: () => {
+        syncStarted = true;
+        return syncPromise;
+      }
     },
     xlsx: null,
     getDefaultRoot: () => root,
@@ -163,5 +174,8 @@ test("waits for the first root sync before returning sessions", async () => {
     requestId: "test-request"
   });
 
-  assert.deepEqual(JSON.parse(responseBody).sessions, [{ sessionId: "initial" }]);
+  assert.deepEqual(JSON.parse(responseBody).sessions, [{ sessionId: "cached" }]);
+  assert.equal(syncStarted, true);
+  releaseSync();
+  await syncPromise;
 });
