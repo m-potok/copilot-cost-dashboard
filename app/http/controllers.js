@@ -187,10 +187,10 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessi
         const registeredRoot = registerRoot(root);
         const selectedRoot = registeredRoot || root;
         const syncStatusBeforeRead = statusFor(selectedRoot);
-        if (!syncStatusBeforeRead.root || syncStatusBeforeRead.root.status !== "ready") {
-          await syncService.syncRoot(selectedRoot);
-        }
         const sessions = sessionRepository.getSessions(selectedRoot);
+        if (!syncStatusBeforeRead.root || syncStatusBeforeRead.root.status !== "ready") {
+          syncService.syncRoot(selectedRoot).catch(() => {});
+        }
         const syncStatus = statusFor(selectedRoot);
         sendJson(res, 200, {
           root: selectedRoot,
