@@ -107,7 +107,7 @@ avvio. Il percorso può essere modificato impostando
 | **Output Tokens** | Token di risposta |
 | **Total Tokens** | Input + Output |
 | **Errors** | Richieste con status != ok |
-| **AIC** | Abstract Integration Cost (formula token_prices) |
+| **AIC** | Abstract Integration Cost (native VS Code AIU when available, otherwise formula token_prices) |
 | **Costo (€)** | AIC × valore configurato |
 
 ### Progetti e modifiche al codice
@@ -149,15 +149,30 @@ I log dei child session sono referenced nel main.jsonl tramite `child_session_re
 
 ## Formula di calcolo
 
-```
-AIC = ((inputTokens - cachedTokens) × input_price 
-      + cachedTokens × cache_price 
-      + outputTokens × output_price) / 1.000.000
+Per i debug-log VS Code che includono `attrs.copilotUsageNanoAiu`, il dashboard
+usa il valore nativo per ogni richiesta:
 
+```
+AIC = somma(copilotUsageNanoAiu) / 1.000.000.000
+```
+
+Questo evita di ricostruire la tariffazione della cache e di applicare sconti
+aggiuntivi a un valore già calcolato da VS Code. Per i log più vecchi o privi
+del valore nativo viene usato il fallback tariffario:
+
+```
+AIC = ((inputTokens - cachedTokens) × cache_write_price
+      + cachedTokens × cache_read_price
+      + outputTokens × output_price) / 1.000.000
+```
+
+Se `cache_write_price` non è disponibile, il fallback usa `input_price`; per i
+log legacy `cache_price` viene usato come `cache_read_price`. I prezzi sono
+letti da `models.json` dentro ogni sessione debug-logs.
+
+```
 Costo EUR = AIC × valore_AIC_configurato
 ```
-
-I prezzi sono letti da `models.json` dentro ogni sessione debug-logs.
 
 ## Struttura cartelle
 

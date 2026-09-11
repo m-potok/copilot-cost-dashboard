@@ -13,6 +13,7 @@ const {
   analyzeSession,
   readSessionsFromRoot
 } = require("../app/copilot-cost-dashboard-server");
+const { calculateTurnAic } = require("../app/domain/pricing");
 const { createControllers } = require("../app/http/controllers");
 
 const fixtureRoot = path.join(__dirname, "fixtures");
@@ -41,6 +42,42 @@ test("calculates token pricing, cache pricing, errors, and auto discount", () =>
   assert.equal(result.outputTokens, 50);
   assert.equal(result.aic, 0.00039400000000000004);
   assert.equal(result.autoDiscountTurns, 1);
+});
+
+test("supports current cache price fields in fallback pricing", () => {
+  const prices = buildModelPriceMap(JSON.stringify([
+    {
+      id: "gpt-current",
+      billing: {
+        token_prices: {
+          default: {
+            input_price: 20,
+            output_price: 120,
+            cache_read_price: 2,
+            cache_write_price: 25
+          }
+        }
+      }
+    }
+  ]));
+
+  assert.equal(calculateTurnAic(100, 20, 40, prices.get("gpt-current")).aic, 0.00684);
+});
+
+test("prefers native VS Code AIU over reconstructed pricing", () => {
+  const prices = buildModelPriceMap(JSON.stringify([
+    { id: "gpt-test", billing: { token_prices: { default: { input_price: 2, output_price: 4, cache_price: 1 } } } }
+  ]));
+  const result = analyzeSession("native", [
+    { type: "llm_request", attrs: { model: "gpt-test", inputTokens: 100, outputTokens: 40, copilotUsageNanoAiu: 125000000 } },
+    { type: "llm_request", name: "chat:auto", attrs: { model: "gpt-test", inputTokens: 10, outputTokens: 10, copilotUsageNanoAiu: 250000000 } }
+  ], prices, "Native session");
+
+  assert.equal(result.aic, 0.375);
+  assert.equal(result.autoDiscountTurns, 0);
+  assert.equal(result.autoDiscountAmount, 0);
+  assert.equal(result.missingPriceTurns, 0);
+  assert.deepEqual(result.modelAgg, [{ model: "gpt-test", turns: 2, aic: 0.375 }]);
 });
 
 test("preserves fallback transcript turns when primary events have no usage", () => {

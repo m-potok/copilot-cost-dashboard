@@ -156,6 +156,16 @@ function isAutoModelRequest(row) {
   return false;
 }
 
+function getNativeAic(attrs) {
+  const rawValue = attrs && attrs.copilotUsageNanoAiu;
+  if (rawValue === undefined || rawValue === null ||
+      (typeof rawValue === "string" && rawValue.trim() === "")) {
+    return null;
+  }
+  const nanoAiu = Number(rawValue);
+  return Number.isFinite(nanoAiu) && nanoAiu >= 0 ? nanoAiu / 1000000000 : null;
+}
+
 function isMeaningfulSessionStartEvent(row) {
   if (!row || !row.type) return false;
   const type = String(row.type);
@@ -209,14 +219,18 @@ function analyzeSession(sessionId, rows, priceMap, title = null) {
       cachedTokens += cached;
 
       const prices = getPriceForModel(priceMap, modelId);
-      const discounted = isAutoModelRequest(row);
-      const turnPricing = calculateTurnAic(input, cached, output, prices, discounted);
+      const nativeAic = getNativeAic(attrs);
+      const hasNativeAic = nativeAic !== null;
+      const discounted = !hasNativeAic && isAutoModelRequest(row);
+      const turnPricing = hasNativeAic
+        ? { aic: nativeAic, discountedAmount: 0 }
+        : calculateTurnAic(input, cached, output, prices, discounted);
       const turnAic = turnPricing.aic;
       if (prices && discounted) {
         autoDiscountTurns += 1;
         autoDiscountAmount += turnPricing.discountedAmount;
       }
-      if (!prices) {
+      if (!hasNativeAic && !prices) {
         missingPriceTurns += 1;
       }
       aic += turnAic;

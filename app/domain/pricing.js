@@ -12,13 +12,22 @@ function buildModelPriceMap(modelsText) {
       if (!item || !item.id) continue;
       let normalized = null;
       if (prices) {
+        const cacheReadPrice = Number(prices.cache_read_price ?? prices.cache_price ?? 0);
         normalized = {
           input_price: Number(prices.input_price || 0),
           output_price: Number(prices.output_price || 0),
-          cache_price: Number(prices.cache_price || 0)
+          cache_price: cacheReadPrice,
+          cache_read_price: cacheReadPrice,
+          cache_write_price: Number(prices.cache_write_price ?? prices.input_price ?? 0)
         };
       } else if (Number.isFinite(multiplier) && multiplier > 0) {
-        normalized = { input_price: multiplier, output_price: multiplier, cache_price: multiplier };
+        normalized = {
+          input_price: multiplier,
+          output_price: multiplier,
+          cache_price: multiplier,
+          cache_read_price: multiplier,
+          cache_write_price: multiplier
+        };
       }
       if (!normalized) continue;
       map.set(String(item.id), normalized);
@@ -43,8 +52,10 @@ function getPriceForModel(priceMap, modelId) {
 
 function calculateTurnAic(input, cached, output, prices, discounted = false) {
   if (!prices) return { aic: 0, discountedAmount: 0 };
-  const rawAic = (((input - cached) * prices.input_price) +
-    (cached * prices.cache_price) +
+  const uncachedPrice = prices.cache_write_price ?? prices.input_price;
+  const cacheReadPrice = prices.cache_read_price ?? prices.cache_price ?? 0;
+  const rawAic = ((Math.max(0, input - cached) * uncachedPrice) +
+    (cached * cacheReadPrice) +
     (output * prices.output_price)) / 1000000;
   return {
     aic: discounted ? rawAic * AUTO_AIC_DISCOUNT_FACTOR : rawAic,
