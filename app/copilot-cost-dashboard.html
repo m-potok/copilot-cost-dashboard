@@ -61,6 +61,20 @@
 
     h1 { margin: 0; font-size: clamp(1.3rem, 2.5vw, 2rem); letter-spacing: -0.02em; }
 
+    .version-label {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.48em;
+      font-weight: 600;
+      letter-spacing: 0;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
     .subtitle { color: var(--muted); margin: 4px 0 0; font-size: 0.94rem; }
 
     .chip {
@@ -635,7 +649,7 @@
     <section class="header">
       <div class="headline">
         <div>
-          <h1>Copilot Session Cost Tracker</h1>
+          <h1>Copilot Session Cost Tracker <span class="version-label">v__APP_VERSION__</span></h1>
         </div>
         <span class="badge" id="loadedCount">0 sessioni caricate</span>
       </div>

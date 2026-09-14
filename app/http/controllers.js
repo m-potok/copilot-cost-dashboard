@@ -44,7 +44,7 @@ function pickDirectoryNative() {
   });
 }
 
-function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessionRepository, syncService, xlsx, getDefaultRoot, preferencesStore, closeDatabases }) {
+function createControllers({ dashboardFile, apiClientFile, appVersion, sessionCatalog, sessionRepository, syncService, xlsx, getDefaultRoot, preferencesStore, closeDatabases }) {
   function registerRoot(root) {
     if (!root || !syncService) return null;
     return syncService.registerRoot(root);
@@ -96,7 +96,7 @@ function createControllers({ dashboardFile, apiClientFile, sessionCatalog, sessi
         return;
       }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      res.end(html);
+      res.end(html.replace("__APP_VERSION__", String(appVersion || "").trim()));
     },
 
     async apiClient(_req, res) {

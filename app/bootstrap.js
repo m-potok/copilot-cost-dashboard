@@ -10,6 +10,7 @@ const { closeCopilotDatabases } = require("./adapters/copilot-app/store");
 const { SqliteSessionRepository } = require("./infrastructure/sqlite-session-repository");
 const { SessionSyncService } = require("./application/session-sync-service");
 const preferencesStore = require("./infrastructure/preferences-store");
+const { version: appVersion } = require("../package.json");
 
 const HOST = "127.0.0.1";
 const PORT = 4781;
@@ -48,6 +49,7 @@ function createServer({ repository = sessionRepository, sync = syncService } = {
   const controllers = createControllers({
     dashboardFile: DASHBOARD_FILE,
     apiClientFile: API_CLIENT_FILE,
+    appVersion,
     sessionCatalog,
     sessionRepository: repository,
     syncService: sync,
