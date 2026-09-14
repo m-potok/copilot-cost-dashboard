@@ -3,6 +3,7 @@ const fs = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
 const test = require("node:test");
+const { version: appVersion } = require("../package.json");
 
 const {
   server,
@@ -158,6 +159,11 @@ test("serves API smoke endpoints", async (t) => {
   const apiClient = await request(port, "/api-client.js");
   assert.equal(apiClient.statusCode, 200);
   assert.match(apiClient.body, /dashboardApi/);
+
+  const dashboard = await request(port, "/");
+  assert.equal(dashboard.statusCode, 200);
+  assert.match(dashboard.body, new RegExp(`class="version-label">v${appVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/span>`));
+  assert.doesNotMatch(dashboard.body, /__APP_VERSION__/);
 
   const exported = await request(port, "/api/export-excel", "POST", {
     root: fixtureRoot,
