@@ -9,6 +9,18 @@ Non rispecchiano necessariamente il costo finale effettivo di fatturazione.
 
 ## Installazione veloce
 
+### Versionamento
+
+Il progetto usa Semantic Versioning. Ogni PR mergiata su `master` incrementa la
+versione `PATCH` e crea il tag Git corrispondente nel formato `vX.Y.Z`.
+Per una funzionalità visibile agli utenti, aggiungi alla PR la label
+`release:minor`: il merge incrementerà la versione `MINOR`.
+
+Gli incrementi `MAJOR` richiedono l'avvio manuale del workflow **Semantic
+version major**. I workflow aggiornano `package.json` e `package-lock.json`,
+poi eseguono il commit e il push del tag su `master`. Non vengono creati
+GitHub Release né allegati EXE.
+
 ### 1. Requisiti
 
 - **Node.js** (versione 24): [Scarica da nodejs.org](https://nodejs.org/)
