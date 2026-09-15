@@ -173,6 +173,12 @@ test("serves API smoke endpoints", async (t) => {
   assert.equal(exported.body.slice(0, 2), "PK");
 });
 
+test("renders the project table from the project-filtered sessions", async () => {
+  const dashboard = await fs.readFile(path.join(__dirname, "..", "app", "copilot-cost-dashboard.html"), "utf8");
+  assert.match(dashboard, /renderProjects\(sessions, aicValueEuro\);/);
+  assert.doesNotMatch(dashboard, /renderProjects\(sessionsInRange\(\), aicValueEuro\);/);
+});
+
 test("returns cached sessions while the first root sync runs in background", async () => {
   let synced = false;
   let syncStarted = false;
