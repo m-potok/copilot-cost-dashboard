@@ -1,6 +1,6 @@
 {
   "name": "copilot-cost-dashboard",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Standalone builder for Copilot Debug Logs Cost Tracker",
   "bin": "app/copilot-cost-dashboard-server.js",
