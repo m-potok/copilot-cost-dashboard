@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
+const vm = require("node:vm");
 const test = require("node:test");
 const { version: appVersion } = require("../package.json");
 
@@ -18,6 +19,28 @@ const { calculateTurnAic } = require("../app/domain/pricing");
 const { createControllers } = require("../app/http/controllers");
 
 const fixtureRoot = path.join(__dirname, "fixtures");
+
+test("marks only unreachable API requests as reachability errors", async () => {
+  const apiClient = await fs.readFile(path.join(__dirname, "..", "app", "frontend", "api-client.js"), "utf8");
+  const window = {};
+  const context = vm.createContext({ window, fetch: async () => { throw new Error("fetch failed"); } });
+  vm.runInContext(apiClient, context);
+
+  await assert.rejects(
+    window.dashboardApi.getSessions("fixture-root"),
+    (error) => error.isReachabilityError === true
+  );
+
+  context.fetch = async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({ error: "Service unavailable" })
+  });
+  await assert.rejects(
+    window.dashboardApi.getSessions("fixture-root"),
+    (error) => error.message === "Service unavailable" && error.isReachabilityError === undefined
+  );
+});
 
 test("parses valid JSONL rows and ignores malformed lines", () => {
   assert.deepEqual(parseJsonl('{"ok":1}\nnot-json\n{"ok":2}\n'), [{ ok: 1 }, { ok: 2 }]);

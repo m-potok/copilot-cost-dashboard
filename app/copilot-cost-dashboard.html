@@ -405,6 +405,30 @@
 
     .status.warn { color: var(--danger); font-weight: 700; }
 
+    .connectivity-warning {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 10px 12px;
+      border: 1px solid #f3d5d9;
+      border-radius: 8px;
+      color: var(--danger);
+      background: #fff7f8;
+      font-weight: 700;
+    }
+
+    .connectivity-warning::before {
+      content: "!";
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      line-height: 1;
+    }
+
     .sync-status {
       display: inline-flex;
       align-items: center;
@@ -735,6 +759,7 @@
       </div>
 
       <div id="status" class="status hidden" aria-live="polite"></div>
+      <div id="connectivityWarning" class="connectivity-warning hidden" role="alert" aria-live="assertive"></div>
       <div id="syncStatus" class="status sync-status" role="status" aria-live="polite" aria-atomic="true">Sorgente: SQLite · Sync in attesa...</div>
       <div class="disclaimer">
         Disclaimer: i valori mostrati sono indicativi e non rappresentano il costo finale effettivo di fatturazione.
@@ -923,6 +948,7 @@
     const projectFilterEl = document.getElementById("projectFilter");
     const loadedCountEl = document.getElementById("loadedCount");
     const statusEl = document.getElementById("status");
+    const connectivityWarningEl = document.getElementById("connectivityWarning");
     const syncStatusEl = document.getElementById("syncStatus");
     const configPanelEl = document.getElementById("configPanel");
     const loadingOverlayEl = document.getElementById("loadingOverlay");
@@ -959,6 +985,17 @@
       const message = String(text || "").trim();
       statusEl.textContent = message;
       statusEl.className = message ? (isWarn ? "status warn" : "status") : "status hidden";
+    }
+
+    function showConnectivityWarning(error) {
+      if (!error || !error.isReachabilityError) return;
+      connectivityWarningEl.textContent = "Il server HTTP non è raggiungibile. Sono mostrati gli ultimi dati disponibili, che potrebbero non essere aggiornati.";
+      connectivityWarningEl.classList.remove("hidden");
+    }
+
+    function clearConnectivityWarning() {
+      connectivityWarningEl.textContent = "";
+      connectivityWarningEl.classList.add("hidden");
     }
 
     function showSyncStatus(status) {
@@ -1499,10 +1536,12 @@
       refreshAbortController = new AbortController();
       try {
         const payload = await dashboardApi.getSessionsDelta(root, refreshAbortController.signal);
+        clearConnectivityWarning();
         applyDeltaPayload(payload, { silent });
       } catch (error) {
-        if (error.name !== "AbortError" && !silent) {
-          setStatus(`Errore aggiornamento automatico: ${error.message}`, true);
+        if (error.name !== "AbortError") {
+          showConnectivityWarning(error);
+          if (!silent) setStatus(`Errore aggiornamento automatico: ${error.message}`, true);
         }
       } finally {
         refreshInFlight = false;
@@ -1562,6 +1601,7 @@
       loadAbortController = new AbortController();
       try {
         const payload = await dashboardApi.getSessions(root, loadAbortController.signal);
+        clearConnectivityWarning();
         state.sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
         showSyncStatus(payload.syncStatus);
         state.selectedRootPath = payload.root || root;
@@ -1571,7 +1611,10 @@
         configPanelEl.open = false;
         startAutoRefresh();
       } catch (error) {
-        if (error.name !== "AbortError") setStatus(`Errore caricamento: ${error.message}`, true);
+        if (error.name !== "AbortError") {
+          showConnectivityWarning(error);
+          setStatus(`Errore caricamento: ${error.message}`, true);
+        }
       } finally {
         loadAbortController = null;
       }
@@ -1613,10 +1656,12 @@
       setLoading(true, "Sincronizzazione filesystem in corso...");
       try {
         const payload = await dashboardApi.syncNow(root);
+        clearConnectivityWarning();
         showSyncStatus(payload.status);
         await loadFromPath(root);
         setStatus("");
       } catch (error) {
+        showConnectivityWarning(error);
         setStatus(`Errore sincronizzazione: ${error.message}`, true);
       } finally {
         setLoading(false);
